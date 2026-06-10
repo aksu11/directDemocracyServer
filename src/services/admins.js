@@ -11,47 +11,57 @@
  * Tiedosto luodaan tyhjänä jos sitä ei ole.
  */
 
-const fs = require('fs');
-const path = require('path');
 const bcrypt = require('bcrypt');
+const { getDb } = require('./firebase');
 
-const ADMINS_FILE = path.join(__dirname, '..', '..', 'admins.json');
 const BCRYPT_ROUNDS = 12;
 
-function loadAdmins() {
-  if (!fs.existsSync(ADMINS_FILE)) {
-    fs.writeFileSync(ADMINS_FILE, JSON.stringify({}), 'utf8');
-  }
-  try {
-    return JSON.parse(fs.readFileSync(ADMINS_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveAdmins(admins) {
-  fs.writeFileSync(ADMINS_FILE, JSON.stringify(admins, null, 2), 'utf8');
-}
+// Firestore collection name for admins
+const ADMINS_COLLECTION = 'admins';
 
 /** Lisää tai päivittää adminin. role = 'admin' | 'superadmin' */
 async function upsertAdmin(username, plainPassword, role = 'admin') {
   if (!['admin', 'superadmin'].includes(role)) {
     throw new Error('Rooli täytyy olla "admin" tai "superadmin".');
   }
-  const admins = loadAdmins();
   const hash = await bcrypt.hash(plainPassword, BCRYPT_ROUNDS);
-  admins[username.trim().toLowerCase()] = { hash, role };
-  saveAdmins(admins);
+  const db = getDb();
+  const docRef = db.collection(ADMINS_COLLECTION).doc(String(username).trim().toLowerCase());
+  await docRef.set({ hash, role }, { merge: true });
   return hash;
 }
 
 /** Tarkistaa käyttäjänimen ja salasanan. Palauttaa roolin tai null. */
 async function verifyAdmin(username, plainPassword) {
-  const admins = loadAdmins();
-  const entry = admins[username.trim().toLowerCase()];
-  if (!entry) return null;
+  const db = getDb();
+  const doc = await db.collection(ADMINS_COLLECTION).doc(String(username).trim().toLowerCase()).get();
+  if (!doc.exists) return null;
+  const entry = doc.data();
   const match = await bcrypt.compare(plainPassword, entry.hash);
   return match ? entry.role : null;
 }
 
-module.exports = { upsertAdmin, verifyAdmin };
+async function getAdminEntry(username) {
+  const db = getDb();
+  const doc = await db.collection(ADMINS_COLLECTION).doc(String(username).trim().toLowerCase()).get();
+  return doc.exists ? doc.data() : null;
+}
+
+async function setAdminField(username, key, value) {
+  const db = getDb();
+  const docRef = db.collection(ADMINS_COLLECTION).doc(String(username).trim().toLowerCase());
+  const obj = {};
+  obj[key] = value;
+  await docRef.set(obj, { merge: true });
+}
+
+async function getLastCreatedAt(username) {
+  const entry = await getAdminEntry(username);
+  return entry && entry.lastCreatedAt ? entry.lastCreatedAt : null;
+}
+
+async function setLastCreatedAt(username, isoString) {
+  await setAdminField(username, 'lastCreatedAt', isoString);
+}
+
+module.exports = { upsertAdmin, verifyAdmin, getAdminEntry, setAdminField, getLastCreatedAt, setLastCreatedAt };

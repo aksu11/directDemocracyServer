@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/firebase');
 const { adminAuth } = require('../middleware/adminAuth');
+const { getLastCreatedAt, setLastCreatedAt } = require('../services/admins');
 const { validateScope } = require('../data/geography');
 
 /**
@@ -45,6 +46,21 @@ router.post('/polls', adminAuth, async (req, res) => {
   }
 
   try {
+    // Rate limit: one poll per admin per 7 days
+    try {
+      const lastIso = getLastCreatedAt(req.adminUser);
+      if (lastIso) {
+        const last = new Date(lastIso);
+        const diffMs = Date.now() - last.getTime();
+        const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+        if (diffMs < sevenDaysMs) {
+          const allowedAt = new Date(last.getTime() + sevenDaysMs);
+          return res.status(429).json({ error: 'Voit luoda uuden äänestyksen kerran viikossa.', allowedAt: allowedAt.toISOString() });
+        }
+      }
+    } catch (e) {
+      console.warn('Unable to check admin lastCreatedAt', e);
+    }
     const db = getDb();
     const pollData = {
       question: question.trim(),
@@ -59,6 +75,8 @@ router.post('/polls', adminAuth, async (req, res) => {
     };
 
     const ref = await db.collection('polls').add(pollData);
+    // record creation time for admin
+    try { setLastCreatedAt(req.adminUser, new Date().toISOString()); } catch (e) { console.warn('Failed to set lastCreatedAt', e); }
     return res.status(201).json({ id: ref.id, ...pollData });
   } catch (err) {
     console.error('POST /admin/polls error:', err);
