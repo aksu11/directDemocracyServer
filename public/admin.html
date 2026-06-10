@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin – DirectDemocracy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f4f4f5; color: #18181b; }
+
+    header {
+      background: #1e40af; color: #fff; padding: 1rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.2rem; }
+    #logoutBtn { background: #fff; color: #1e40af; border: none; padding: .4rem .9rem;
+                 border-radius: 6px; cursor: pointer; font-weight: 600; }
+
+    main { max-width: 680px; margin: 2rem auto; padding: 0 1rem; }
+
+    /* Login */
+    #loginSection { background: #fff; border-radius: 12px; padding: 2rem; box-shadow: 0 1px 4px #0002; }
+    #loginSection h2 { margin-bottom: 1.2rem; }
+    label { display: block; margin-bottom: .3rem; font-size: .9rem; font-weight: 500; }
+    input, select { width: 100%; padding: .6rem .8rem; border: 1px solid #d4d4d8;
+                    border-radius: 6px; font-size: 1rem; margin-bottom: 1rem; }
+    button.primary { background: #1e40af; color: #fff; border: none; padding: .7rem 1.4rem;
+                     border-radius: 6px; cursor: pointer; font-size: 1rem; font-weight: 600; }
+    button.primary:hover { background: #1d3799; }
+    button.danger { background: #dc2626; color: #fff; border: none; padding: .4rem .9rem;
+                    border-radius: 6px; cursor: pointer; }
+
+    /* Admin panel */
+    #adminSection { display: none; }
+    .card { background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 4px #0002; margin-bottom: 1.5rem; }
+    .card h2 { margin-bottom: 1.2rem; font-size: 1.1rem; }
+
+    #optionsList { list-style: none; margin-bottom: .8rem; }
+    #optionsList li { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+    #optionsList li input { margin-bottom: 0; }
+    #optionsList li button { background: none; border: none; cursor: pointer; color: #dc2626; font-size: 1.1rem; }
+    #addOptionBtn { background: none; border: 1px dashed #a1a1aa; padding: .4rem .8rem;
+                    border-radius: 6px; cursor: pointer; color: #52525b; margin-bottom: 1rem; }
+
+    #message { margin-top: 1rem; padding: .7rem 1rem; border-radius: 6px; display: none; }
+    #message.success { background: #dcfce7; color: #166534; display: block; }
+    #message.error   { background: #fee2e2; color: #991b1b; display: block; }
+
+    /* Poll list */
+    .poll-item { border: 1px solid #e4e4e7; border-radius: 8px; padding: 1rem; margin-bottom: .8rem; }
+    .poll-item h3 { font-size: 1rem; margin-bottom: .4rem; }
+    .poll-meta { font-size: .82rem; color: #71717a; margin-bottom: .6rem; }
+    .poll-options { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
+    .badge { background: #e0f2fe; color: #0369a1; border-radius: 4px; padding: .2rem .6rem; font-size: .8rem; }
+    .badge.votes { background: #f0fdf4; color: #166534; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>DirectDemocracy Admin</h1>
+  <button id="logoutBtn" onclick="logout()" style="display:none">Kirjaudu ulos</button>
+</header>
+
+<main>
+  <!-- Login -->
+  <section id="loginSection">
+    <h2>Kirjaudu sisään</h2>
+    <label for="usernameInput">Käyttäjänimi</label>
+    <input type="text" id="usernameInput" placeholder="Käyttäjänimi" autocomplete="username" />
+    <label for="passwordInput">Salasana</label>
+    <input type="password" id="passwordInput" placeholder="Salasana" autocomplete="current-password" />
+    <button class="primary" onclick="login()">Kirjaudu</button>
+    <div id="loginError" style="color:#dc2626;margin-top:.8rem;"></div>
+  </section>
+
+  <!-- Admin panel -->
+  <section id="adminSection">
+
+    <!-- Luo äänestys -->
+    <div class="card">
+      <h2>Luo uusi äänestys</h2>
+      <label for="question">Kysymys</label>
+      <input type="text" id="question" placeholder="esim. Hyväksytäänkö ehdotus?" />
+
+      <label for="description">Kuvaus (valinnainen, max 2000 merkkiä)</label>
+      <textarea id="description" maxlength="2000" placeholder="Kirjoita kuvaus ja liitä linkkejä..." rows="5"></textarea>
+      <div style="font-size:.85rem;color:#6b7280;margin-top:.25rem"><span id="descCount">0</span>/2000</div>
+
+      <label>Vaihtoehdot</label>
+      <ul id="optionsList">
+        <li><input type="text" placeholder="Vaihtoehto 1" /><button onclick="removeOption(this)">✕</button></li>
+        <li><input type="text" placeholder="Vaihtoehto 2" /><button onclick="removeOption(this)">✕</button></li>
+      </ul>
+      <button id="addOptionBtn" onclick="addOption()">+ Lisää vaihtoehto</button>
+
+      <label for="endsAt">Päättyy</label>
+      <input type="datetime-local" id="endsAt" />
+
+      <label for="scope">Laajuus (kenelle äänestys näkyy)</label>
+      <select id="scope" onchange="onScopeChange()">
+        <option value="world">Koko maailma</option>
+        <optgroup id="allianceGroup" label="Liitot"></optgroup>
+        <optgroup label="Maantieteellinen">
+          <option value="country">Maa</option>
+          <option value="region">Maakunta</option>
+          <option value="city" selected>Kaupunki</option>
+        </optgroup>
+      </select>
+
+      <div id="scopeCountryWrap">
+        <label for="scopeCountry">Maa</label>
+        <input type="text" id="scopeCountry" placeholder="esim. Finland" />
+      </div>
+      <div id="scopeRegionWrap">
+        <label for="scopeRegion">Maakunta</label>
+        <input type="text" id="scopeRegion" placeholder="esim. Pirkanmaa" />
+      </div>
+      <div id="scopeCityWrap">
+        <label for="scopeCity">Kaupunki</label>
+        <input type="text" id="scopeCity" placeholder="esim. Tampere" />
+      </div>
+
+      <br/>
+      <button class="primary" onclick="createPoll()">Luo äänestys</button>
+      <div id="message"></div>
+    </div>
+
+    <!-- Äänestykset -->
+    <div class="card">
+      <h2>Aktiiviset äänestykset</h2>
+      <div id="pollList"><em>Ladataan...</em></div>
+    </div>
+
+  </section>
+</main>
+
+<script>
+  let authHeader = '';
+
+  function makeBasicAuth(username, password) {
+    return 'Basic ' + btoa(username + ':' + password);
+  }
+
+  async function login() {
+    const username = document.getElementById('usernameInput').value.trim();
+    const pw = document.getElementById('passwordInput').value;
+    if (!username || !pw) return;
+
+    const header = makeBasicAuth(username, pw);
+
+    // Verify credentials by hitting a protected endpoint
+    const res = await fetch('/api/admin/verify', {
+      method: 'GET',
+      headers: { Authorization: header }
+    });
+
+    if (res.ok) {
+      authHeader = header;
+      document.getElementById('loginSection').style.display = 'none';
+      document.getElementById('adminSection').style.display = 'block';
+      document.getElementById('logoutBtn').style.display = 'inline';
+      loadPolls();
+    } else {
+      document.getElementById('loginError').textContent = 'Väärä salasana.';
+    }
+  }
+
+  function logout() {
+    authHeader = '';
+    document.getElementById('loginSection').style.display = 'block';
+    document.getElementById('adminSection').style.display = 'none';
+    document.getElementById('logoutBtn').style.display = 'none';
+    document.getElementById('passwordInput').value = '';
+  }
+
+  function onScopeChange() {
+    const scope = document.getElementById('scope').value;
+    document.getElementById('scopeCountryWrap').style.display = ['country','region','city'].includes(scope) ? '' : 'none';
+    document.getElementById('scopeRegionWrap').style.display  = ['region','city'].includes(scope)          ? '' : 'none';
+    document.getElementById('scopeCityWrap').style.display    = scope === 'city'                           ? '' : 'none';
+  }
+  // Aseta alkutila
+  document.addEventListener('DOMContentLoaded', () => { onScopeChange(); });
+
+  function addOption() {
+    const li = document.createElement('li');
+    const count = document.querySelectorAll('#optionsList li').length + 1;
+    li.innerHTML = `<input type="text" placeholder="Vaihtoehto ${count}" /><button onclick="removeOption(this)">✕</button>`;
+    document.getElementById('optionsList').appendChild(li);
+  }
+
+  function removeOption(btn) {
+    const items = document.querySelectorAll('#optionsList li');
+    if (items.length <= 2) { alert('Vähintään 2 vaihtoehtoa vaaditaan.'); return; }
+    btn.parentElement.remove();
+  }
+
+  async function createPoll() {
+    const question = document.getElementById('question').value.trim();
+    const description = document.getElementById('description').value.trim();
+    const options = [...document.querySelectorAll('#optionsList li input')]
+      .map(i => i.value.trim())
+      .filter(v => v);
+    const endsAt = document.getElementById('endsAt').value;
+
+    const msgEl = document.getElementById('message');
+    msgEl.className = '';
+    msgEl.style.display = 'none';
+
+    if (!question || options.length < 2) {
+      msgEl.textContent = 'Kysymys ja vähintään 2 vaihtoehtoa vaaditaan.';
+      msgEl.className = 'error';
+      return;
+    }
+    if (!endsAt) {
+      msgEl.textContent = 'Päättymisaika vaaditaan.';
+      msgEl.className = 'error';
+      return;
+    }
+    if (new Date(endsAt) <= new Date()) {
+      msgEl.textContent = 'Päättymisajan täytyy olla tulevaisuudessa.';
+      msgEl.className = 'error';
+      return;
+    }
+    if (description && description.length > 2000) {
+      msgEl.textContent = 'Kuvaus saa olla enintään 2000 merkkiä.';
+      msgEl.className = 'error';
+      return;
+    }
+
+    const res = await fetch('/api/admin/polls', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+      body: JSON.stringify({
+        question, description, options,
+        endsAt: new Date(endsAt).toISOString(),
+        scope: document.getElementById('scope').value,
+        scopeCountry: document.getElementById('scopeCountry').value.trim() || undefined,
+        scopeRegion:  document.getElementById('scopeRegion').value.trim()  || undefined,
+        scopeCity:    document.getElementById('scopeCity').value.trim()    || undefined,
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      msgEl.textContent = 'Äänestys luotu! ID: ' + data.id;
+      msgEl.className = 'success';
+      document.getElementById('question').value = '';
+      document.getElementById('description').value = '';
+      document.getElementById('endsAt').value = '';
+      document.getElementById('scopeCountry').value = '';
+      document.getElementById('scopeRegion').value = '';
+      document.getElementById('scopeCity').value = '';
+      document.querySelectorAll('#optionsList li input').forEach(i => i.value = '');
+      document.getElementById('descCount').textContent = '0';
+      loadPolls();
+    } else {
+      msgEl.textContent = data.error || 'Virhe luodessa äänestystä.';
+      msgEl.className = 'error';
+    }
+  }
+
+  async function loadPolls() {
+    const res = await fetch('/api/polls');
+    const polls = await res.json();
+    const el = document.getElementById('pollList');
+    if (!polls.length) { el.innerHTML = '<em>Ei avoimia äänestyksiä.</em>'; return; }
+
+    el.innerHTML = polls.map(p => {
+      const endsAt = p.endsAt ? new Date(p.endsAt._seconds ? p.endsAt._seconds * 1000 : p.endsAt) : null;
+      const endsStr = endsAt ? endsAt.toLocaleString('fi-FI') : '–';
+      return `
+      <div class="poll-item">
+        <h3>${escHtml(p.question)}</h3>
+        <div class="poll-meta">ID: ${p.id} &nbsp;·&nbsp; Päättyy: ${endsStr}</div>
+        ${p.descriptionHtml ? `<div class="poll-desc">${p.descriptionHtml}</div>` : (p.description ? `<p class="poll-desc">${escHtml(p.description)}</p>` : '')}
+        <div class="poll-options">
+          ${p.options.map(o => `<span class="badge">${escHtml(o.label)}</span><span class="badge votes">${o.votes} ääntä</span>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function deletePoll(pollId) {
+    if (!confirm('Poistetaanko äänestys JA kaikki sen äänet pysyvästi? Tätä ei voi perüa.')) return;
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Allow Enter key on password field
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('usernameInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('passwordInput').focus();
+    });
+    document.getElementById('passwordInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') login();
+    });
+    onScopeChange();
+    // Kuvaus kentän merkkilaskuri
+    const descEl = document.getElementById('description');
+    const descCount = document.getElementById('descCount');
+    if (descEl && descCount) {
+      descCount.textContent = descEl.value.length;
+      descEl.addEventListener('input', () => { descCount.textContent = descEl.value.length; });
+    }
+    // Lataa liitot dynaamisesti
+    fetch('/api/geo/scopes').then(r => r.json()).then(data => {
+      const group = document.getElementById('allianceGroup');
+      const labels = {
+        eu: 'Euroopan unioni', schengen: 'Schengen-alue', nato: 'NATO',
+        african_union: 'Afrikan unioni', asean: 'ASEAN', brics: 'BRICS',
+        commonwealth: 'Commonwealth', arab_league: 'Arabiliitto', mercosur: 'Mercosur', g20: 'G20'
+      };
+      (data.alliances || []).forEach(key => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = labels[key] || key;
+        group.appendChild(opt);
+      });
+    });
+  });
+</script>
+</body>
+</html>

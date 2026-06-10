@@ -1,0 +1,29 @@
+{
+  "name": "direct-democracy-backend",
+  "version": "1.0.0",
+  "description": "Backend for the DirectDemocracy voting application",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "firebase-admin": "^14.0.0",
+    "helmet": "^8.2.0",
+    "marked": "^5.0.2",
+    "sanitize-html": "^2.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+  ,
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}
