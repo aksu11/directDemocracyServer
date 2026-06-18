@@ -8,7 +8,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { getDb } = require('../src/services/firebase');
+const { initFirebase, getDb } = require('../src/services/firebase');
 
 async function main() {
   const file = path.join(__dirname, '..', 'admins.json');
@@ -17,6 +17,7 @@ async function main() {
     process.exit(1);
   }
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  initFirebase();
   const db = getDb();
   const batch = db.batch();
   const now = new Date().toISOString();
