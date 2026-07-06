@@ -2,20 +2,22 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
-const { isEligible } = require('../data/geography');
+const { isEligible, hasMinimumAge, MIN_POLITICAL_AGE } = require('../data/geography');
+const { verifyGoogleIdToken } = require('../services/googleAuth');
 
 /**
  * POST /api/votes
  * Cast a vote on a poll.
  *
  * Body:
- *   deviceId   {string}  – ANDROID_ID from the client
- *   isEmulator {boolean} – result of client-side isLikelyEmulator()
- *   pollId     {string}  – Firestore document ID of the poll
- *   optionId   {number}  – index of the chosen option
+ *   deviceId      {string}  – ANDROID_ID from the client
+ *   isEmulator    {boolean} – result of client-side isLikelyEmulator()
+ *   pollId        {string}  – Firestore document ID of the poll
+ *   optionId      {number}  – index of the chosen option
+ *   googleIdToken {string}  – vaaditaan jos äänestys on merkitty requiresLogin: true
  */
 router.post('/', deviceAuth, async (req, res) => {
-  const { pollId, optionId } = req.body;
+  const { pollId, optionId, googleIdToken } = req.body;
   const deviceHash = req.deviceHash;
 
   if (pollId === undefined || optionId === undefined) {
@@ -43,8 +45,25 @@ router.post('/', deviceAuth, async (req, res) => {
     if (!userDoc.exists) {
       return res.status(403).json({ error: 'Laite ei ole rekisteröity. Rekisteröidy ensin.' });
     }
+    if (poll.isPolitical === true && !hasMinimumAge(userDoc.data(), MIN_POLITICAL_AGE)) {
+      return res.status(403).json({ error: `Tämä äänestys vaatii, että olet vähintään ${MIN_POLITICAL_AGE}-vuotias.` });
+    }
     if (!isEligible(userDoc.data(), poll)) {
       return res.status(403).json({ error: 'Et ole oikeutettu äänestämään tässä äänestyksessä.' });
+    }
+
+    // Poliittisesti herkät äänestykset vaativat Google-kirjautumisen laitetunnisteen
+    // lisäksi. Ääni tunnistetaan tällöin Google-tilin (googleUid) perusteella, jotta
+    // yksi tili ei voi äänestää useasti eri laitteilta.
+    let voteDocId = deviceHash;
+    if (poll.requiresLogin === true) {
+      let googleUid;
+      try {
+        ({ googleUid } = await verifyGoogleIdToken(googleIdToken));
+      } catch (err) {
+        return res.status(401).json({ error: 'Tämä äänestys vaatii Google-kirjautumisen.' });
+      }
+      voteDocId = `g_${googleUid}`;
     }
 
     const optIdx = Number(optionId);
@@ -52,8 +71,8 @@ router.post('/', deviceAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid optionId.' });
     }
 
-    // Check for duplicate vote using the device hash as the document ID
-    const voteRef = db.collection('polls').doc(String(pollId)).collection('votes').doc(deviceHash);
+    // Check for duplicate vote using the device hash (or Google uid) as the document ID
+    const voteRef = db.collection('polls').doc(String(pollId)).collection('votes').doc(voteDocId);
     const existingVote = await voteRef.get();
 
     if (existingVote.exists) {
@@ -66,6 +85,7 @@ router.post('/', deviceAuth, async (req, res) => {
     batch.set(voteRef, {
       optionId: optIdx,
       votedAt: new Date(),
+      ...(poll.requiresLogin === true && { deviceHash }),
     });
 
     const updatedOptions = poll.options.map((opt) =>

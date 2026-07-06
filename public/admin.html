@@ -22,8 +22,12 @@
     #loginSection { background: #fff; border-radius: 12px; padding: 2rem; box-shadow: 0 1px 4px #0002; }
     #loginSection h2 { margin-bottom: 1.2rem; }
     label { display: block; margin-bottom: .3rem; font-size: .9rem; font-weight: 500; }
-    input, select { width: 100%; padding: .6rem .8rem; border: 1px solid #d4d4d8;
-                    border-radius: 6px; font-size: 1rem; margin-bottom: 1rem; }
+    input, select, textarea { width: 100%; padding: .6rem .8rem; border: 1px solid #d4d4d8;
+                    border-radius: 6px; font-size: 1rem; margin-bottom: 1rem; font-family: inherit; }
+    textarea { resize: vertical; }
+    .checkbox-row { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+    .checkbox-row input { width: auto; margin-bottom: 0; }
+    .checkbox-row label { margin-bottom: 0; }
     button.primary { background: #1e40af; color: #fff; border: none; padding: .7rem 1.4rem;
                      border-radius: 6px; cursor: pointer; font-size: 1rem; font-weight: 600; }
     button.primary:hover { background: #1d3799; }
@@ -84,13 +88,13 @@
       <input type="text" id="question" placeholder="esim. Hyväksytäänkö ehdotus?" />
 
       <label for="description">Kuvaus (valinnainen, max 2000 merkkiä)</label>
-      <textarea id="description" maxlength="2000" placeholder="Kirjoita kuvaus ja liitä linkkejä..." rows="5"></textarea>
+      <textarea id="description" maxlength="2000" placeholder="Kirjoita kuvaus ja liitä linkkejä..." rows="10"></textarea>
       <div style="font-size:.85rem;color:#6b7280;margin-top:.25rem"><span id="descCount">0</span>/2000</div>
 
-      <label>Vaihtoehdot</label>
+      <label id="optionsLabel">Vaihtoehdot</label>
       <ul id="optionsList">
-        <li><input type="text" placeholder="Vaihtoehto 1" /><button onclick="removeOption(this)">✕</button></li>
-        <li><input type="text" placeholder="Vaihtoehto 2" /><button onclick="removeOption(this)">✕</button></li>
+        <li><input type="text" id="option-1" name="option-1" placeholder="Vaihtoehto 1" aria-label="Vaihtoehto 1" /><button type="button" onclick="removeOption(this)">✕</button></li>
+        <li><input type="text" id="option-2" name="option-2" placeholder="Vaihtoehto 2" aria-label="Vaihtoehto 2" /><button type="button" onclick="removeOption(this)">✕</button></li>
       </ul>
       <button id="addOptionBtn" onclick="addOption()">+ Lisää vaihtoehto</button>
 
@@ -100,29 +104,26 @@
       <label for="scope">Laajuus (kenelle äänestys näkyy)</label>
       <select id="scope" onchange="onScopeChange()">
         <option value="world">Koko maailma</option>
-        <optgroup id="allianceGroup" label="Liitot"></optgroup>
-        <optgroup label="Maantieteellinen">
-          <option value="country">Maa</option>
-          <option value="region">Maakunta</option>
-          <option value="city" selected>Kaupunki</option>
-        </optgroup>
+        <option value="country" selected>Maa</option>
       </select>
 
       <div id="scopeCountryWrap">
         <label for="scopeCountry">Maa</label>
-        <input type="text" id="scopeCountry" placeholder="esim. Finland" />
+        <select id="scopeCountry"></select>
       </div>
-      <div id="scopeRegionWrap">
-        <label for="scopeRegion">Maakunta</label>
-        <input type="text" id="scopeRegion" placeholder="esim. Pirkanmaa" />
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="requiresLogin" />
+        <label for="requiresLogin">Vaatii kirjautumisen (poliittisesti herkkä äänestys)</label>
       </div>
-      <div id="scopeCityWrap">
-        <label for="scopeCity">Kaupunki</label>
-        <input type="text" id="scopeCity" placeholder="esim. Tampere" />
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="isPolitical" />
+        <label for="isPolitical">Poliittinen äänestys (ikäraja 18v)</label>
       </div>
 
       <br/>
-      <button class="primary" onclick="createPoll()">Luo äänestys</button>
+      <button class="primary" id="createPollBtn" onclick="createPoll()">Luo äänestys</button>
       <div id="message"></div>
     </div>
 
@@ -176,17 +177,29 @@
 
   function onScopeChange() {
     const scope = document.getElementById('scope').value;
-    document.getElementById('scopeCountryWrap').style.display = ['country','region','city'].includes(scope) ? '' : 'none';
-    document.getElementById('scopeRegionWrap').style.display  = ['region','city'].includes(scope)          ? '' : 'none';
-    document.getElementById('scopeCityWrap').style.display    = scope === 'city'                           ? '' : 'none';
+    document.getElementById('scopeCountryWrap').style.display = scope === 'country' ? '' : 'none';
   }
+
+  async function loadCountries() {
+    try {
+      const res = await fetch('/api/geo/countries');
+      const data = await res.json();
+      const select = document.getElementById('scopeCountry');
+      select.innerHTML = data.countries
+        .map(c => `<option value="${c.code}">${escHtml(c.name)}</option>`)
+        .join('');
+    } catch (e) {
+      console.error('Maalistan lataus epäonnistui:', e);
+    }
+  }
+
   // Aseta alkutila
-  document.addEventListener('DOMContentLoaded', () => { onScopeChange(); });
+  document.addEventListener('DOMContentLoaded', () => { onScopeChange(); loadCountries(); });
 
   function addOption() {
     const li = document.createElement('li');
     const count = document.querySelectorAll('#optionsList li').length + 1;
-    li.innerHTML = `<input type="text" placeholder="Vaihtoehto ${count}" /><button onclick="removeOption(this)">✕</button>`;
+    li.innerHTML = `<input type="text" id="option-${count}" name="option-${count}" placeholder="Vaihtoehto ${count}" aria-label="Vaihtoehto ${count}" /><button type="button" onclick="removeOption(this)">✕</button>`;
     document.getElementById('optionsList').appendChild(li);
   }
 
@@ -197,6 +210,9 @@
   }
 
   async function createPoll() {
+    const btn = document.getElementById('createPollBtn');
+    if (btn.disabled) return; // estää tuplaklikkauksen aiheuttaman tuplalähetyksen
+
     const question = document.getElementById('question').value.trim();
     const description = document.getElementById('description').value.trim();
     const options = [...document.querySelectorAll('#optionsList li input')]
@@ -229,35 +245,47 @@
       return;
     }
 
-    const res = await fetch('/api/admin/polls', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-      body: JSON.stringify({
-        question, description, options,
-        endsAt: new Date(endsAt).toISOString(),
-        scope: document.getElementById('scope').value,
-        scopeCountry: document.getElementById('scopeCountry').value.trim() || undefined,
-        scopeRegion:  document.getElementById('scopeRegion').value.trim()  || undefined,
-        scopeCity:    document.getElementById('scopeCity').value.trim()    || undefined,
-      })
-    });
+    btn.disabled = true;
+    btn.textContent = 'Luodaan...';
 
-    const data = await res.json();
-    if (res.ok) {
-      msgEl.textContent = 'Äänestys luotu! ID: ' + data.id;
-      msgEl.className = 'success';
-      document.getElementById('question').value = '';
-      document.getElementById('description').value = '';
-      document.getElementById('endsAt').value = '';
-      document.getElementById('scopeCountry').value = '';
-      document.getElementById('scopeRegion').value = '';
-      document.getElementById('scopeCity').value = '';
-      document.querySelectorAll('#optionsList li input').forEach(i => i.value = '');
-      document.getElementById('descCount').textContent = '0';
-      loadPolls();
-    } else {
-      msgEl.textContent = data.error || 'Virhe luodessa äänestystä.';
+    try {
+      const res = await fetch('/api/admin/polls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+        body: JSON.stringify({
+          question, description, options,
+          endsAt: new Date(endsAt).toISOString(),
+          scope: document.getElementById('scope').value,
+          scopeCountry: document.getElementById('scope').value === 'country'
+            ? document.getElementById('scopeCountry').value
+            : undefined,
+          requiresLogin: document.getElementById('requiresLogin').checked,
+          isPolitical: document.getElementById('isPolitical').checked,
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        msgEl.textContent = 'Äänestys luotu! ID: ' + data.id;
+        msgEl.className = 'success';
+        document.getElementById('question').value = '';
+        document.getElementById('description').value = '';
+        document.getElementById('endsAt').value = '';
+        document.getElementById('requiresLogin').checked = false;
+        document.getElementById('isPolitical').checked = false;
+        document.querySelectorAll('#optionsList li input').forEach(i => i.value = '');
+        document.getElementById('descCount').textContent = '0';
+        loadPolls();
+      } else {
+        msgEl.textContent = data.error || 'Virhe luodessa äänestystä.';
+        msgEl.className = 'error';
+      }
+    } catch (e) {
+      msgEl.textContent = 'Virhe luodessa äänestystä.';
       msgEl.className = 'error';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Luo äänestys';
     }
   }
 
@@ -273,7 +301,7 @@
       return `
       <div class="poll-item">
         <h3>${escHtml(p.question)}</h3>
-        <div class="poll-meta">ID: ${p.id} &nbsp;·&nbsp; Päättyy: ${endsStr}</div>
+        <div class="poll-meta">ID: ${p.id} &nbsp;·&nbsp; Päättyy: ${endsStr}${p.requiresLogin ? ' &nbsp;·&nbsp; 🔒 Vaatii kirjautumisen' : ''}${p.isPolitical ? ' &nbsp;·&nbsp; 🔞 Ikäraja 18v' : ''}</div>
         ${p.descriptionHtml ? `<div class="poll-desc">${p.descriptionHtml}</div>` : (p.description ? `<p class="poll-desc">${escHtml(p.description)}</p>` : '')}
         <div class="poll-options">
           ${p.options.map(o => `<span class="badge">${escHtml(o.label)}</span><span class="badge votes">${o.votes} ääntä</span>`).join('')}
@@ -306,21 +334,6 @@
       descCount.textContent = descEl.value.length;
       descEl.addEventListener('input', () => { descCount.textContent = descEl.value.length; });
     }
-    // Lataa liitot dynaamisesti
-    fetch('/api/geo/scopes').then(r => r.json()).then(data => {
-      const group = document.getElementById('allianceGroup');
-      const labels = {
-        eu: 'Euroopan unioni', schengen: 'Schengen-alue', nato: 'NATO',
-        african_union: 'Afrikan unioni', asean: 'ASEAN', brics: 'BRICS',
-        commonwealth: 'Commonwealth', arab_league: 'Arabiliitto', mercosur: 'Mercosur', g20: 'G20'
-      };
-      (data.alliances || []).forEach(key => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = labels[key] || key;
-        group.appendChild(opt);
-      });
-    });
   });
 </script>
 </body>

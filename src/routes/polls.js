@@ -3,8 +3,51 @@ const router = express.Router();
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
 const { isEligible } = require('../data/geography');
+const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { marked } = require('marked');
 const sanitizeHtml = require('sanitize-html');
+
+marked.setOptions({ mangle: false, headerIds: false });
+
+/** Muuntaa Markdown-kuvauksen sanitoiduksi HTML:ksi. */
+function renderDescriptionHtml(description) {
+  try {
+    return sanitizeHtml(marked.parse(String(description)), {
+      // Allow basic formatting + links, no images
+      allowedTags: ['a', 'p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre'],
+      allowedAttributes: { a: ['href', 'target', 'rel'] },
+      transformTags: {
+        a: (tagName, attribs) => ({ tagName: 'a', attribs: Object.assign({}, attribs, { target: '_blank', rel: 'noopener noreferrer' }) }),
+      },
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+function withDescriptionHtml(data) {
+  if (data.description) {
+    data.descriptionHtml = renderDescriptionHtml(data.description);
+  }
+  return data;
+}
+
+/**
+ * Korvaa vaihtoehtojen todelliset äänimäärät prosenttiosuuksilla.
+ * Päättyneiden äänestysten todelliset äänimäärät ovat vain adminien nähtävissä
+ * (ks. /api/admin/polls/ended), joten julkiset reitit eivät saa paljastaa niitä.
+ */
+function withPercentages(data) {
+  const total = data.options.reduce((sum, o) => sum + (o.votes || 0), 0);
+  return {
+    ...data,
+    options: data.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      percentage: total > 0 ? Math.round((o.votes / total) * 1000) / 10 : 0,
+    })),
+  };
+}
 
 /**
  * GET /api/polls
@@ -19,31 +62,86 @@ router.get('/', async (req, res) => {
       .orderBy('endsAt', 'asc')
       .get();
 
-    const polls = snapshot.docs.map((doc) => {
-      const data = { id: doc.id, ...doc.data() };
-      if (data.description) {
-        try {
-          const rawHtml = marked.parse(String(data.description));
-          data.descriptionHtml = sanitizeHtml(rawHtml, {
-            // Allow basic formatting + links, no images
-            allowedTags: ['a','p','br','strong','b','em','i','ul','ol','li','blockquote','code','pre'],
-            allowedAttributes: {
-              a: ['href','target','rel']
-            },
-            transformTags: {
-              'a': (tagName, attribs) => ({ tagName: 'a', attribs: Object.assign({}, attribs, { target: '_blank', rel: 'noopener noreferrer' }) })
-            }
-          });
-        } catch (e) {
-          data.descriptionHtml = null;
-        }
-      }
-      return data;
-    });
+    const polls = snapshot.docs.map((doc) => withDescriptionHtml({ id: doc.id, ...doc.data() }));
     return res.json(polls);
   } catch (err) {
     console.error('GET /polls error:', err);
     return res.status(500).json({ error: 'Failed to fetch polls.' });
+  }
+});
+
+/**
+ * GET /api/polls/ended
+ * Palauttaa päättyneet (arkistoidut) äänestykset uusimmasta vanhimpaan,
+ * jotta puhelinsovelluksella voi selata vanhoja äänestyksiä ja niiden tuloksia.
+ */
+router.get('/ended', async (req, res) => {
+  try {
+    const db = getDb();
+    const snapshot = await db
+      .collection(ENDED_COLLECTION)
+      .orderBy('endsAt', 'desc')
+      .get();
+
+    const polls = snapshot.docs.map((doc) => withPercentages(withDescriptionHtml({ id: doc.id, ...doc.data() })));
+    return res.json(polls);
+  } catch (err) {
+    console.error('GET /polls/ended error:', err);
+    return res.status(500).json({ error: 'Päättyneiden äänestysten haku epäonnistui.' });
+  }
+});
+
+/**
+ * POST /api/polls/ended/eligible
+ * Palauttaa päättyneet äänestykset joihin laite olisi ollut oikeutettu osallistumaan.
+ *
+ * Body: { deviceId, isEmulator }
+ */
+router.post('/ended/eligible', deviceAuth, async (req, res) => {
+  try {
+    const db = getDb();
+
+    const userDoc = await db.collection('users').doc(req.deviceHash).get();
+    if (!userDoc.exists) {
+      return res.status(403).json({ error: 'Laite ei ole rekisteröity. Rekisteröidy ensin /api/register -reitillä.' });
+    }
+    const user = userDoc.data();
+
+    const snapshot = await db
+      .collection(ENDED_COLLECTION)
+      .orderBy('endsAt', 'desc')
+      .get();
+
+    const polls = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((poll) => isEligible(user, poll))
+      .map(withDescriptionHtml)
+      .map(withPercentages);
+
+    return res.json(polls);
+  } catch (err) {
+    console.error('POST /polls/ended/eligible error:', err);
+    return res.status(500).json({ error: 'Haku epäonnistui.' });
+  }
+});
+
+/**
+ * GET /api/polls/ended/:pollId
+ * Returns a single archived (ended) poll with its final results.
+ */
+router.get('/ended/:pollId', async (req, res) => {
+  try {
+    const db = getDb();
+    const doc = await db.collection(ENDED_COLLECTION).doc(req.params.pollId).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Poll not found.' });
+    }
+
+    return res.json(withPercentages(withDescriptionHtml({ id: doc.id, ...doc.data() })));
+  } catch (err) {
+    console.error('GET /polls/ended/:pollId error:', err);
+    return res.status(500).json({ error: 'Failed to fetch poll.' });
   }
 });
 
@@ -60,20 +158,7 @@ router.get('/:pollId', async (req, res) => {
       return res.status(404).json({ error: 'Poll not found.' });
     }
 
-    const poll = { id: doc.id, ...doc.data() };
-    if (poll.description) {
-      try {
-        poll.descriptionHtml = sanitizeHtml(marked.parse(String(poll.description)), {
-          allowedTags: ['a','p','br','strong','b','em','i','ul','ol','li','blockquote','code','pre'],
-          allowedAttributes: { a: ['href','target','rel'] },
-          transformTags: { 'a': (tagName, attribs) => ({ tagName: 'a', attribs: Object.assign({}, attribs, { target: '_blank', rel: 'noopener noreferrer' }) }) }
-        });
-      } catch (e) {
-        poll.descriptionHtml = null;
-      }
-    }
-
-    return res.json(poll);
+    return res.json(withDescriptionHtml({ id: doc.id, ...doc.data() }));
   } catch (err) {
     console.error('GET /polls/:pollId error:', err);
     return res.status(500).json({ error: 'Failed to fetch poll.' });
@@ -105,20 +190,7 @@ router.post('/eligible', deviceAuth, async (req, res) => {
     const polls = snapshot.docs
       .map((doc) => ({ id: doc.id, ...doc.data() }))
       .filter((poll) => isEligible(user, poll))
-      .map((data) => {
-        if (data.description) {
-          try {
-            data.descriptionHtml = sanitizeHtml(marked.parse(String(data.description)), {
-              allowedTags: ['a','p','br','strong','b','em','i','ul','ol','li','blockquote','code','pre'],
-              allowedAttributes: { a: ['href','target','rel'] },
-              transformTags: { 'a': (tagName, attribs) => ({ tagName: 'a', attribs: Object.assign({}, attribs, { target: '_blank', rel: 'noopener noreferrer' }) }) }
-            });
-          } catch (e) {
-            data.descriptionHtml = null;
-          }
-        }
-        return data;
-      });
+      .map(withDescriptionHtml);
 
     return res.json(polls);
   } catch (err) {
