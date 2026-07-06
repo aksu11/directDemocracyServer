@@ -34,23 +34,39 @@ app.use(
 // ne eivät koskaan törmää tähän. Rajaus koskee vain selaimesta (web) tehtyjä
 // pyyntöjä, esim. Expo-sovelluksen web-esikatselua paikallisessa kehityksessä.
 // Lisää tuotannon web-osoitteet CORS_ORIGINS-ympäristömuuttujaan (pilkulla erotettuna).
+app.set('trust proxy', 1);
+
 const allowedOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
 
 app.use(
-  cors({
-    origin(origin, callback) {
+  cors((req, callback) => {
+    const origin = req.headers.origin;
+    const isAllowed =
       // Ei Origin-headeria (natiivisovellukset, curl, palvelin-palvelin) -> salli
-      if (!origin) return callback(null, true);
+      !origin ||
       // Paikallinen kehitys (127.0.0.1/localhost, mikä tahansa portti)
-      if (/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('Not allowed by CORS'));
-    },
+      /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin) ||
+      allowedOrigins.includes(origin) ||
+      // Sama origin kuin palvelin itse (esim. tämän palvelimen oma
+      // /admin/admin.html kutsuu /api/admin/polls). Selain lähettää
+      // Origin-headerin myös samasta originista tehdyille POST/PUT/DELETE-
+      // pyynnöille, joten se pitää sallia erikseen tässä.
+      isSameOrigin(origin, req);
+    callback(isAllowed ? null : new Error('Not allowed by CORS'), { origin: isAllowed });
   })
 );
+
+function isSameOrigin(origin, req) {
+  if (!origin) return false;
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
 
 // Parse JSON bodies (limit size to reduce DoS surface)
 app.use(express.json({ limit: '16kb' }));
@@ -84,7 +100,9 @@ app.use((req, res) => res.status(404).json({ error: 'Not found.' }));
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error.' });
+  const status = Number.isInteger(err.status || err.statusCode) ? (err.status || err.statusCode) : 500;
+  const message = status >= 400 && status < 500 ? err.message || 'Request error.' : 'Internal server error.';
+  res.status(status).json({ error: message });
 });
 
 app.listen(PORT, () => {
