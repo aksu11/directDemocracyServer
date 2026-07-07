@@ -10,6 +10,8 @@ const votesRouter = require('./routes/votes');
 const adminRouter = require('./routes/admin');
 const registerRouter = require('./routes/register');
 const geoRouter      = require('./routes/geo');
+const shareRouter    = require('./routes/share');
+const wellKnownRouter = require('./routes/wellKnown');
 
 const ARCHIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 
@@ -84,12 +86,22 @@ setInterval(() => {
 app.get('/admin', (req, res) => res.redirect('/admin/admin.html'));
 app.use('/admin', express.static(path.join(__dirname, '..', 'public')));
 
+// Jaettava kuva (Open Graph -esikatselukortti)
+app.use('/share', express.static(path.join(__dirname, '..', 'public', 'share')));
+
+// Android App Links -verifiointi (https://developer.android.com/training/app-links/verify-android-applinks)
+app.use('/.well-known', wellKnownRouter);
+
 // Routes
 app.use('/api/polls', pollsRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/register', registerRouter);
 app.use('/api/geo', geoRouter);
+
+// Jaettavat äänestyslinkit (/polls/:id, /ended/:id) – palvelinpuolella renderöity
+// HTML Open Graph -tageilla somejakoa varten + fallback niille joilla appia ei ole.
+app.use(shareRouter);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
