@@ -261,7 +261,7 @@
   async function activateBanner(bannerId) {
     const msgEl = document.getElementById('bannerMessage');
     msgEl.className = '';
-    msgEl.style.display = 'none';
+    msgEl.style.display = '';
     try {
       const res = await fetch(`/api/admin/banners/${encodeURIComponent(bannerId)}/activate`, {
         method: 'POST',
@@ -316,7 +316,7 @@
     const btn = document.getElementById('saveStatusBtn');
     const msgEl = document.getElementById('statusMessage');
     msgEl.className = '';
-    msgEl.style.display = 'none';
+    msgEl.style.display = '';
 
     const maintenanceMode = document.getElementById('maintenanceMode').checked;
     const message = document.getElementById('maintenanceMessage').value.trim();
@@ -404,7 +404,7 @@
 
     const msgEl = document.getElementById('message');
     msgEl.className = '';
-    msgEl.style.display = 'none';
+    msgEl.style.display = '';
 
     if (!question || options.length < 2) {
       msgEl.textContent = 'Kysymys ja vähintään 2 vaihtoehtoa vaaditaan.';
