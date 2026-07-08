@@ -13,21 +13,26 @@ const geoRouter      = require('./routes/geo');
 const shareRouter    = require('./routes/share');
 const wellKnownRouter = require('./routes/wellKnown');
 const statusRouter    = require('./routes/status');
+const accountDeletionRouter = require('./routes/accountDeletion');
 
 const ARCHIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security headers – relax CSP so the admin page can load inline scripts
+// Security headers – relax CSP so the admin page can load inline scripts,
+// and so the /account-deletion page can load Google Identity Services
+// (Google-kirjautuminen tilin poisto -sivulla).
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
         scriptSrcAttr: ["'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
+        frameSrc: ['https://accounts.google.com'],
+        connectSrc: ["'self'", 'https://accounts.google.com'],
       },
     },
   })
@@ -104,6 +109,9 @@ app.use('/api/status', statusRouter);
 // Jaettavat äänestyslinkit (/polls/:id, /ended/:id) – palvelinpuolella renderöity
 // HTML Open Graph -tageilla somejakoa varten + fallback niille joilla appia ei ole.
 app.use(shareRouter);
+
+// Tilin/tietojen poisto -ohjesivu (Google Play -tietosuojaosion vaatima linkki).
+app.use(accountDeletionRouter);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

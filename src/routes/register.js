@@ -101,4 +101,28 @@ router.post('/me', deviceAuth, async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/register
+ * GDPR-oikeus tietojen poistamiseen: poistaa laitteen rekisteröintitiedot
+ * (users-kokoelma, eli maa/ikä/alusta). Annettuja ääniä EI poisteta, ei edes
+ * käynnissä olevista äänestyksistä – kerran annettu ääni kuuluu pysyvästi
+ * äänestyksen tulokseen, eikä sitä saa muuttaa jälkikäteen (myös päättyneiden
+ * äänestysten tulosten pitää pysyä muuttumattomina).
+ *
+ * Body: { deviceId, isEmulator }
+ */
+router.delete('/', deviceAuth, async (req, res) => {
+  const deviceHash = req.deviceHash;
+
+  try {
+    const db = getDb();
+    await db.collection('users').doc(deviceHash).delete();
+
+    return res.json({ deleted: true });
+  } catch (err) {
+    console.error('DELETE /register error:', err);
+    return res.status(500).json({ error: 'Tietojen poisto epäonnistui.' });
+  }
+});
+
 module.exports = router;
