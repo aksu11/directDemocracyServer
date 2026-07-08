@@ -16,6 +16,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "firebase-admin": "^14.0.0",
+    "geoip-lite": "^1.4.10",
     "google-auth-library": "^10.9.0",
     "helmet": "^8.2.0",
     "marked": "^5.0.2",

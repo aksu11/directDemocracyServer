@@ -239,4 +239,57 @@ router.get('/polls/ended/:pollId', adminAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/polls/:pollId/geo
+ * Palauttaa äänestyksen äänten maajakauman IP-pohjaisen maatunnistuksen
+ * perusteella (ks. services/geoIp.js ja routes/votes.js). Auttaa
+ * havaitsemaan poikkeamia (esim. epätavallisen suuri osuus ääniä muualta
+ * kuin äänestyksen scopeCountry-maasta). Toimii sekä aktiivisille että
+ * päättyneille (arkistoiduille) äänestyksille.
+ */
+router.get('/polls/:pollId/geo', adminAuth, async (req, res) => {
+  try {
+    const db = getDb();
+
+    let pollRef = db.collection('polls').doc(req.params.pollId);
+    let pollDoc = await pollRef.get();
+    if (!pollDoc.exists) {
+      pollRef = db.collection(ENDED_COLLECTION).doc(req.params.pollId);
+      pollDoc = await pollRef.get();
+    }
+    if (!pollDoc.exists) {
+      return res.status(404).json({ error: 'Poll not found.' });
+    }
+
+    const votesSnapshot = await pollRef.collection('votes').get();
+    const counts = {};
+    let unknownCount = 0;
+
+    votesSnapshot.docs.forEach((doc) => {
+      const country = doc.data().ipCountry;
+      if (!country) {
+        unknownCount += 1;
+      } else {
+        counts[country] = (counts[country] || 0) + 1;
+      }
+    });
+
+    const countries = Object.entries(counts)
+      .map(([country, count]) => ({ country, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return res.json({
+      pollId: req.params.pollId,
+      scope: pollDoc.data().scope,
+      scopeCountry: pollDoc.data().scopeCountry || null,
+      total: votesSnapshot.size,
+      unknownCount,
+      countries,
+    });
+  } catch (err) {
+    console.error('GET /admin/polls/:pollId/geo error:', err);
+    return res.status(500).json({ error: 'Maajakauman haku epäonnistui.' });
+  }
+});
+
 module.exports = router;

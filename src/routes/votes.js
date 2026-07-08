@@ -4,6 +4,8 @@ const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
 const { isEligible, hasMinimumAge, MIN_POLITICAL_AGE } = require('../data/geography');
 const { verifyGoogleIdToken } = require('../services/googleAuth');
+const { lookupCountry } = require('../services/geoIp');
+const { isRateLimited } = require('../services/voteRateLimiter');
 
 /**
  * POST /api/votes
@@ -23,6 +25,20 @@ router.post('/', deviceAuth, async (req, res) => {
   if (pollId === undefined || optionId === undefined) {
     return res.status(400).json({ error: 'pollId and optionId are required.' });
   }
+
+  // Anomaliaseuranta: hylkää jos samasta IP-osoitteesta tulee poikkeavan
+  // paljon äänestyksiä lyhyessä ajassa (esim. VPN-/datacenter-pohjainen
+  // äänisumutus). Tarkistetaan ennen Firestore-kutsuja tarpeettomien
+  // luku-/kirjoitusoperaatioiden välttämiseksi.
+  if (isRateLimited(req.ip)) {
+    console.warn(`Rate limit ylittyi IP-osoitteelle ${req.ip} äänestyksessä ${pollId}.`);
+    return res.status(429).json({ error: 'Liian monta äänestystä lyhyessä ajassa. Yritä myöhemmin uudelleen.' });
+  }
+
+  // IP-pohjainen maatunnistus – ei estä ääntä, mutta tallennetaan jokaisen
+  // äänen yhteyteen jotta admin voi tarkastella äänestyksen maajakaumaa
+  // (ks. routes/admin.js GET /polls/:pollId/geo) ja tunnistaa poikkeamia.
+  const ipCountry = lookupCountry(req.ip);
 
   const db = getDb();
 
@@ -85,6 +101,7 @@ router.post('/', deviceAuth, async (req, res) => {
     batch.set(voteRef, {
       optionId: optIdx,
       votedAt: new Date(),
+      ipCountry: ipCountry || null,
       ...(poll.requiresLogin === true && { deviceHash }),
     });
 
