@@ -4,6 +4,7 @@ const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
 const { isEligible } = require('../data/geography');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
+const { getActiveBanner } = require('../services/banners');
 const { marked } = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
@@ -142,6 +143,22 @@ router.get('/ended/:pollId', async (req, res) => {
   } catch (err) {
     console.error('GET /polls/ended/:pollId error:', err);
     return res.status(500).json({ error: 'Failed to fetch poll.' });
+  }
+});
+
+/**
+ * GET /api/polls/banner
+ * Palauttaa sovelluksessa n\u00e4ytett\u00e4v\u00e4n aktiivisen bannerin (kuva Firebase
+ * Storagessa, linkki + aktiivisuus Firestoren 'banners'-kokoelmassa), tai
+ * null jos yht\u00e4\u00e4n banneria ei ole t\u00e4ll\u00e4 hetkell\u00e4 aktiivinen.
+ */
+router.get('/banner', async (req, res) => {
+  try {
+    const banner = await getActiveBanner();
+    return res.json(banner);
+  } catch (err) {
+    console.error('GET /polls/banner error:', err);
+    return res.status(500).json({ error: 'Bannerin haku ep\u00e4onnistui.' });
   }
 });
 

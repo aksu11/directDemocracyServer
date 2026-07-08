@@ -127,6 +127,17 @@
       <div id="message"></div>
     </div>
 
+    <!-- Banneri (vain superadmin) -->
+    <div class="card" id="bannerCard" style="display:none">
+      <h2>Banneri</h2>
+      <p style="font-size:.85rem;color:#71717a;margin-bottom:1rem">
+        Valitse mikä banneri näytetään sovelluksen äänestyslistan yläreunassa.
+        Vain yksi banneri voi olla aktiivinen kerrallaan.
+      </p>
+      <div id="bannerList"><em>Ladataan...</em></div>
+      <div id="bannerMessage"></div>
+    </div>
+
     <!-- Äänestykset -->
     <div class="card">
       <h2>Aktiiviset äänestykset</h2>
@@ -138,6 +149,7 @@
 
 <script>
   let authHeader = '';
+  let currentRole = '';
 
   function makeBasicAuth(username, password) {
     return 'Basic ' + btoa(username + ':' + password);
@@ -157,10 +169,14 @@
     });
 
     if (res.ok) {
+      const data = await res.json();
       authHeader = header;
+      currentRole = data.role || '';
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('adminSection').style.display = 'block';
       document.getElementById('logoutBtn').style.display = 'inline';
+      document.getElementById('bannerCard').style.display = currentRole === 'superadmin' ? '' : 'none';
+      if (currentRole === 'superadmin') loadBanners();
       loadPolls();
     } else {
       document.getElementById('loginError').textContent = 'Väärä salasana.';
@@ -169,10 +185,59 @@
 
   function logout() {
     authHeader = '';
+    currentRole = '';
     document.getElementById('loginSection').style.display = 'block';
     document.getElementById('adminSection').style.display = 'none';
     document.getElementById('logoutBtn').style.display = 'none';
     document.getElementById('passwordInput').value = '';
+    document.getElementById('bannerCard').style.display = 'none';
+  }
+
+  async function loadBanners() {
+    const listEl = document.getElementById('bannerList');
+    try {
+      const res = await fetch('/api/admin/banners', { headers: { Authorization: authHeader } });
+      if (!res.ok) { listEl.innerHTML = '<em>Bannereiden lataus epäonnistui.</em>'; return; }
+      const banners = await res.json();
+      if (!banners.length) { listEl.innerHTML = '<em>Ei bannereita.</em>'; return; }
+
+      listEl.innerHTML = banners.map(b => `
+        <div class="poll-item" style="display:flex;align-items:center;gap:1rem;">
+          <input type="radio" name="bannerChoice" id="banner-${escHtml(b.id)}" value="${escHtml(b.id)}" ${b.isActive ? 'checked' : ''} style="width:auto;margin:0;" onchange="activateBanner('${escHtml(b.id)}')" />
+          ${b.imageUrl ? `<img src="${escHtml(b.imageUrl)}" alt="" style="height:48px;border-radius:4px;" />` : ''}
+          <div>
+            <div>${escHtml(b.linkUrl || b.id)}</div>
+            ${b.isActive ? '<span class="badge votes">Aktiivinen</span>' : ''}
+          </div>
+        </div>`).join('');
+    } catch (e) {
+      console.error('Bannereiden lataus epäonnistui:', e);
+      listEl.innerHTML = '<em>Bannereiden lataus epäonnistui.</em>';
+    }
+  }
+
+  async function activateBanner(bannerId) {
+    const msgEl = document.getElementById('bannerMessage');
+    msgEl.className = '';
+    msgEl.style.display = 'none';
+    try {
+      const res = await fetch(`/api/admin/banners/${encodeURIComponent(bannerId)}/activate`, {
+        method: 'POST',
+        headers: { Authorization: authHeader }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        msgEl.textContent = 'Banneri vaihdettu.';
+        msgEl.className = 'success';
+        loadBanners();
+      } else {
+        msgEl.textContent = data.error || 'Bannerin vaihto epäonnistui.';
+        msgEl.className = 'error';
+      }
+    } catch (e) {
+      msgEl.textContent = 'Bannerin vaihto epäonnistui.';
+      msgEl.className = 'error';
+    }
   }
 
   function onScopeChange() {

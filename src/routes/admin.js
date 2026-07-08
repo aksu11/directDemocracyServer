@@ -6,6 +6,7 @@ const { getLastCreatedAt, setLastCreatedAt } = require('../services/admins');
 const { validateScope } = require('../data/geography');
 const { isValidCountryCode } = require('../data/countryCodes');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
+const { setActiveBanner, resolveImageUrl } = require('../services/banners');
 
 /**
  * GET /api/admin/verify
@@ -95,6 +96,56 @@ router.post('/polls', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /admin/polls error:', err);
     return res.status(500).json({ error: 'Äänestyksen luonti epäonnistui.' });
+  }
+});
+
+/**
+ * GET /api/admin/banners
+ * Palauttaa listan bannereista valintaa varten (vain superadmin).
+ * Banner-kuvat on tallennettu Firebase Storageen, ja Firestoren 'banners'-
+ * kokoelma sisältää linkit niihin (imageUrl, linkUrl, isActive).
+ */
+router.get('/banners', adminAuth, async (req, res) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Vain superadmin voi hallita bannereita.' });
+  }
+
+  try {
+    const db = getDb();
+    const snapshot = await db.collection('banners').get();
+    const banners = await Promise.all(snapshot.docs.map(async (doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        imageUrl: await resolveImageUrl(data.imageUrl),
+        linkUrl: data.linkUrl || null,
+        isActive: data.isActive === true,
+      };
+    }));
+    return res.json(banners);
+  } catch (err) {
+    console.error('GET /admin/banners error:', err);
+    return res.status(500).json({ error: 'Bannereiden haku epäonnistui.' });
+  }
+});
+
+/**
+ * POST /api/admin/banners/:id/activate
+ * Asettaa annetun bannerin sovelluksessa näytettäväksi aktiiviseksi banneriksi
+ * ja poistaa aktiivisuuden muilta bannereilta (vain yksi kerrallaan). Vain
+ * superadmin voi vaihtaa banneria.
+ */
+router.post('/banners/:id/activate', adminAuth, async (req, res) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Vain superadmin voi hallita bannereita.' });
+  }
+
+  try {
+    const banner = await setActiveBanner(req.params.id);
+    return res.json(banner);
+  } catch (err) {
+    console.error('POST /admin/banners/:id/activate error:', err);
+    return res.status(400).json({ error: err.message || 'Bannerin aktivointi epäonnistui.' });
   }
 });
 
