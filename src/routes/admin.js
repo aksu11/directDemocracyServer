@@ -7,6 +7,7 @@ const { validateScope } = require('../data/geography');
 const { isValidCountryCode } = require('../data/countryCodes');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { setActiveBanner, resolveImageUrl } = require('../services/banners');
+const { getAppStatus, setAppStatus } = require('../services/appStatus');
 
 /**
  * GET /api/admin/verify
@@ -146,6 +147,54 @@ router.post('/banners/:id/activate', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /admin/banners/:id/activate error:', err);
     return res.status(400).json({ error: err.message || 'Bannerin aktivointi epäonnistui.' });
+  }
+});
+
+/**
+ * GET /api/admin/status
+ * Palauttaa sovelluksen huoltokatkotilan admin-sivua varten (vain superadmin).
+ */
+router.get('/status', adminAuth, async (req, res) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Vain superadmin voi hallita huoltokatkoja.' });
+  }
+
+  try {
+    const status = await getAppStatus();
+    return res.json(status);
+  } catch (err) {
+    console.error('GET /admin/status error:', err);
+    return res.status(500).json({ error: 'Tilan haku epäonnistui.' });
+  }
+});
+
+/**
+ * POST /api/admin/status
+ * Päivittää sovelluksen huoltokatkotilan (vain superadmin).
+ * Body: { maintenanceMode: boolean, message: string, announceFrom?: ISO string|null, estimatedEnd?: ISO string|null }
+ *
+ * - announceFrom: milloin ennakkoilmoitus alkaa näkyä sovelluksen äänestyslistan
+ *   bannerin paikalla (huoltokatko ei vielä käynnissä).
+ * - maintenanceMode: kun true, sovellus näyttää lukitusnäytön "message"-viestillä
+ *   koko äänestyslistan sijaan (käytetään kun palvelin on oikeasti pois käytöstä).
+ */
+router.post('/status', adminAuth, async (req, res) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Vain superadmin voi hallita huoltokatkoja.' });
+  }
+
+  const { maintenanceMode, message, announceFrom, estimatedEnd } = req.body;
+
+  if (maintenanceMode === true && (!message || !String(message).trim())) {
+    return res.status(400).json({ error: 'Viesti vaaditaan kun huoltokatko on käynnissä.' });
+  }
+
+  try {
+    const status = await setAppStatus({ maintenanceMode, message, announceFrom, estimatedEnd });
+    return res.json(status);
+  } catch (err) {
+    console.error('POST /admin/status error:', err);
+    return res.status(500).json({ error: 'Tilan päivitys epäonnistui.' });
   }
 });
 

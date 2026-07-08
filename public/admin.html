@@ -138,6 +138,33 @@
       <div id="bannerMessage"></div>
     </div>
 
+    <!-- Huoltokatko (vain superadmin) -->
+    <div class="card" id="statusCard" style="display:none">
+      <h2>Huoltokatko</h2>
+      <p style="font-size:.85rem;color:#71717a;margin-bottom:1rem">
+        Ennakkoilmoitus näkyy sovelluksessa bannerin paikalla "Alkaa"-ajankohdasta
+        alkaen. Kun "Huoltokatko käynnissä" on päällä, sovellus näyttää
+        äänestyslistan sijaan lukitusnäytön annetulla viestillä.
+      </p>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="maintenanceMode" />
+        <label for="maintenanceMode">Huoltokatko käynnissä (lukitsee sovelluksen)</label>
+      </div>
+
+      <label for="maintenanceMessage">Viesti käyttäjille</label>
+      <textarea id="maintenanceMessage" rows="3" placeholder="esim. Teemme huoltokatkon su 13.7. klo 22-23."></textarea>
+
+      <label for="announceFrom">Ennakkoilmoitus alkaa näkyä (valinnainen)</label>
+      <input type="datetime-local" id="announceFrom" />
+
+      <label for="estimatedEnd">Arvioitu päättymisaika (valinnainen)</label>
+      <input type="datetime-local" id="estimatedEnd" />
+
+      <button class="primary" id="saveStatusBtn" onclick="saveStatus()">Tallenna</button>
+      <div id="statusMessage"></div>
+    </div>
+
     <!-- Äänestykset -->
     <div class="card">
       <h2>Aktiiviset äänestykset</h2>
@@ -176,7 +203,8 @@
       document.getElementById('adminSection').style.display = 'block';
       document.getElementById('logoutBtn').style.display = 'inline';
       document.getElementById('bannerCard').style.display = currentRole === 'superadmin' ? '' : 'none';
-      if (currentRole === 'superadmin') loadBanners();
+      document.getElementById('statusCard').style.display = currentRole === 'superadmin' ? '' : 'none';
+      if (currentRole === 'superadmin') { loadBanners(); loadStatus(); }
       loadPolls();
     } else {
       document.getElementById('loginError').textContent = 'Väärä salasana.';
@@ -191,6 +219,7 @@
     document.getElementById('logoutBtn').style.display = 'none';
     document.getElementById('passwordInput').value = '';
     document.getElementById('bannerCard').style.display = 'none';
+    document.getElementById('statusCard').style.display = 'none';
   }
 
   async function loadBanners() {
@@ -237,6 +266,75 @@
     } catch (e) {
       msgEl.textContent = 'Bannerin vaihto epäonnistui.';
       msgEl.className = 'error';
+    }
+  }
+
+  // Muuntaa ISO-merkkijonon <input type="datetime-local"> -kentän odottamaan
+  // paikalliseen muotoon (YYYY-MM-DDTHH:mm), tai tyhjäksi jos arvoa ei ole.
+  function isoToLocalInput(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  async function loadStatus() {
+    try {
+      const res = await fetch('/api/admin/status', { headers: { Authorization: authHeader } });
+      if (!res.ok) return;
+      const status = await res.json();
+      document.getElementById('maintenanceMode').checked = status.maintenanceMode === true;
+      document.getElementById('maintenanceMessage').value = status.message || '';
+      document.getElementById('announceFrom').value = isoToLocalInput(status.announceFrom);
+      document.getElementById('estimatedEnd').value = isoToLocalInput(status.estimatedEnd);
+    } catch (e) {
+      console.error('Huoltokatkotilan lataus epäonnistui:', e);
+    }
+  }
+
+  async function saveStatus() {
+    const btn = document.getElementById('saveStatusBtn');
+    const msgEl = document.getElementById('statusMessage');
+    msgEl.className = '';
+    msgEl.style.display = 'none';
+
+    const maintenanceMode = document.getElementById('maintenanceMode').checked;
+    const message = document.getElementById('maintenanceMessage').value.trim();
+    const announceFrom = document.getElementById('announceFrom').value;
+    const estimatedEnd = document.getElementById('estimatedEnd').value;
+
+    if (maintenanceMode && !message) {
+      msgEl.textContent = 'Viesti vaaditaan kun huoltokatko on käynnissä.';
+      msgEl.className = 'error';
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/admin/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+        body: JSON.stringify({
+          maintenanceMode,
+          message,
+          announceFrom: announceFrom ? new Date(announceFrom).toISOString() : null,
+          estimatedEnd: estimatedEnd ? new Date(estimatedEnd).toISOString() : null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        msgEl.textContent = 'Tallennettu.';
+        msgEl.className = 'success';
+      } else {
+        msgEl.textContent = data.error || 'Tallennus epäonnistui.';
+        msgEl.className = 'error';
+      }
+    } catch (e) {
+      msgEl.textContent = 'Tallennus epäonnistui.';
+      msgEl.className = 'error';
+    } finally {
+      btn.disabled = false;
     }
   }
 

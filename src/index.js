@@ -12,6 +12,7 @@ const registerRouter = require('./routes/register');
 const geoRouter      = require('./routes/geo');
 const shareRouter    = require('./routes/share');
 const wellKnownRouter = require('./routes/wellKnown');
+const statusRouter    = require('./routes/status');
 
 const ARCHIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 
@@ -98,6 +99,7 @@ app.use('/api/votes', votesRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/register', registerRouter);
 app.use('/api/geo', geoRouter);
+app.use('/api/status', statusRouter);
 
 // Jaettavat äänestyslinkit (/polls/:id, /ended/:id) – palvelinpuolella renderöity
 // HTML Open Graph -tageilla somejakoa varten + fallback niille joilla appia ei ole.
