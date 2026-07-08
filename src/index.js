@@ -20,19 +20,15 @@ const ARCHIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security headers – relax CSP so the admin page can load inline scripts,
-// and so the /account-deletion page can load Google Identity Services
-// (Google-kirjautuminen tilin poisto -sivulla).
+// Security headers – relax CSP so the admin page can load inline scripts
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
         scriptSrcAttr: ["'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
-        frameSrc: ['https://accounts.google.com'],
-        connectSrc: ["'self'", 'https://accounts.google.com'],
+        styleSrc: ["'self'", "'unsafe-inline'"],
       },
     },
   })
