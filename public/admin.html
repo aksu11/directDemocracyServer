@@ -49,6 +49,13 @@
     #message { margin-top: 1rem; padding: .7rem 1rem; border-radius: 6px; display: none; }
     #message.success { background: #dcfce7; color: #166534; display: block; }
     #message.error   { background: #fee2e2; color: #991b1b; display: block; }
+    #statusMessage, #bannerMessage { margin-top: 1rem; padding: .7rem 1rem; border-radius: 6px; display: none; }
+    #statusMessage.success, #bannerMessage.success { background: #dcfce7; color: #166534; display: block; }
+    #statusMessage.error, #bannerMessage.error     { background: #fee2e2; color: #991b1b; display: block; }
+    .date-with-clear { display: flex; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+    .date-with-clear input { flex: 1; margin-bottom: 0; }
+    .clear-btn { white-space: nowrap; background: none; border: 1px solid #d4d4d8; border-radius: 6px;
+                 padding: .6rem .9rem; cursor: pointer; color: #52525b; font-size: .9rem; }
 
     /* Poll list */
     .poll-item { border: 1px solid #e4e4e7; border-radius: 8px; padding: 1rem; margin-bottom: .8rem; }
@@ -156,10 +163,16 @@
       <textarea id="maintenanceMessage" rows="3" placeholder="esim. Teemme huoltokatkon su 13.7. klo 22-23."></textarea>
 
       <label for="announceFrom">Ennakkoilmoitus alkaa näkyä (valinnainen)</label>
-      <input type="datetime-local" id="announceFrom" />
+      <div class="date-with-clear">
+        <input type="datetime-local" id="announceFrom" />
+        <button type="button" class="clear-btn" onclick="clearDateField('announceFrom')">Tyhjennä</button>
+      </div>
 
       <label for="estimatedEnd">Arvioitu päättymisaika (valinnainen)</label>
-      <input type="datetime-local" id="estimatedEnd" />
+      <div class="date-with-clear">
+        <input type="datetime-local" id="estimatedEnd" />
+        <button type="button" class="clear-btn" onclick="clearDateField('estimatedEnd')">Tyhjennä</button>
+      </div>
 
       <button class="primary" id="saveStatusBtn" onclick="saveStatus()">Tallenna</button>
       <div id="statusMessage"></div>
@@ -277,6 +290,12 @@
     if (isNaN(d.getTime())) return '';
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // datetime-local -kenttää on hankala tyhjentää pelkällä näppäimistöllä,
+  // joten tarjotaan oma nappi sille.
+  function clearDateField(id) {
+    document.getElementById(id).value = '';
   }
 
   async function loadStatus() {
