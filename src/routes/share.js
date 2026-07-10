@@ -46,11 +46,17 @@ function renderSharePage({ title, description, url }) {
 <meta property="og:image" content="${safeImage}" />
 <meta property="og:url" content="${safeUrl}" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta http-equiv="refresh" content="0;url=${safeFallback}" />
 </head>
 <body>
 <p>Avataan Suora Demokratia -sovellusta…</p>
 <p>Jos sovellus ei avautunut automaattisesti, <a href="${safeFallback}">jatka tästä</a>.</p>
+<script>
+  // JS-uudelleenohjaus meta-refreshin sijaan: some-crawlerit (Facebook/WhatsApp/
+  // Twitter yms.) eivät suorita JavaScriptiä, joten ne pysähtyvät lukemaan tämän
+  // sivun omat OG-tagit sen sijaan että seuraisivat uudelleenohjausta ja päätyisivät
+  // lukemaan laskeutumissivun tagit (mikä aiemmin aiheutti väärän otsikon/kuvan).
+  window.location.replace(${JSON.stringify(FALLBACK_URL)});
+</script>
 </body>
 </html>`;
 }
