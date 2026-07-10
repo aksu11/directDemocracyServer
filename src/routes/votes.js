@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
+const { appCheck } = require('../middleware/appCheck');
 const { isEligible, hasMinimumAge, MIN_POLITICAL_AGE } = require('../data/geography');
 const { verifyGoogleIdToken } = require('../services/googleAuth');
 const { lookupCountry } = require('../services/geoIp');
@@ -18,7 +19,7 @@ const { isRateLimited } = require('../services/voteRateLimiter');
  *   optionId      {number}  – index of the chosen option
  *   googleIdToken {string}  – vaaditaan jos äänestys on merkitty requiresLogin: true
  */
-router.post('/', deviceAuth, async (req, res) => {
+router.post('/', appCheck, deviceAuth, async (req, res) => {
   const { pollId, optionId, googleIdToken } = req.body;
   const deviceHash = req.deviceHash;
 

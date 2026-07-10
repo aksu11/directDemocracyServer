@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
+const { appCheck } = require('../middleware/appCheck');
 const { isValidCountryCode } = require('../data/countryCodes');
 
 const VALID_PLATFORMS = ['android', 'ios'];
@@ -21,7 +22,7 @@ const VALID_PLATFORMS = ['android', 'ios'];
  *                           merkittyjen äänestysten (isPolitical: true) ikärajan
  *                           tarkistukseen – emme tallenna tarkempaa syntymäaikaa.
  */
-router.post('/', deviceAuth, async (req, res) => {
+router.post('/', appCheck, deviceAuth, async (req, res) => {
   const { country, platform, birthYear } = req.body;
   const deviceHash = req.deviceHash;
 
@@ -85,7 +86,7 @@ router.post('/', deviceAuth, async (req, res) => {
  *
  * Body: { deviceId, isEmulator }
  */
-router.post('/me', deviceAuth, async (req, res) => {
+router.post('/me', appCheck, deviceAuth, async (req, res) => {
   try {
     const db = getDb();
     const doc = await db.collection('users').doc(req.deviceHash).get();
@@ -111,7 +112,7 @@ router.post('/me', deviceAuth, async (req, res) => {
  *
  * Body: { deviceId, isEmulator }
  */
-router.delete('/', deviceAuth, async (req, res) => {
+router.delete('/', appCheck, deviceAuth, async (req, res) => {
   const deviceHash = req.deviceHash;
 
   try {
