@@ -15,7 +15,9 @@ const PLAY_STORE_URL = (process.env.PLAY_STORE_URL || '').trim();
 const LANDING_PAGE_URL = process.env.LANDING_PAGE_URL || 'https://directdemocracy-zmon.onrender.com/';
 const FALLBACK_URL = PLAY_STORE_URL || LANDING_PAGE_URL;
 
-const OG_IMAGE_URL = process.env.OG_IMAGE_URL || `${PUBLIC_BASE_URL}/share/dd-share.png`;
+// JPEG eikä PNG, koska WhatsApp hylkää hiljaisesti liian suuret og:image-tiedostot
+// (alkuperäinen PNG oli ~1 MB, JPEG-pakkauksella ~100 KB).
+const OG_IMAGE_URL = process.env.OG_IMAGE_URL || `${PUBLIC_BASE_URL}/share/dd-share.jpg`;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -44,6 +46,9 @@ function renderSharePage({ title, description, url }) {
 <meta property="og:title" content="${safeTitle}" />
 <meta property="og:description" content="${safeDescription}" />
 <meta property="og:image" content="${safeImage}" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
 <meta property="og:url" content="${safeUrl}" />
 <meta name="twitter:card" content="summary_large_image" />
 </head>
