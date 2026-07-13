@@ -8,6 +8,7 @@ const { isValidCountryCode } = require('../data/countryCodes');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { setActiveBanner, resolveImageUrl } = require('../services/banners');
 const { getAppStatus, setAppStatus } = require('../services/appStatus');
+const { sendNewPollNotification } = require('../services/pushNotifications');
 
 /**
  * GET /api/admin/verify
@@ -93,6 +94,9 @@ router.post('/polls', adminAuth, async (req, res) => {
     const ref = await db.collection('polls').add(pollData);
     // record creation time for admin
     try { await setLastCreatedAt(req.adminUser, new Date().toISOString()); } catch (e) { console.warn('Failed to set lastCreatedAt', e); }
+    // Lähetä push-ilmoitus kiinnostuneille käyttäjille - ei odoteta valmiiksi eikä
+    // virhe saa estää vastauksen palautusta admin-sivulle.
+    sendNewPollNotification(pollData, ref.id).catch((e) => console.warn('sendNewPollNotification failed', e));
     return res.status(201).json({ id: ref.id, ...pollData });
   } catch (err) {
     console.error('POST /admin/polls error:', err);

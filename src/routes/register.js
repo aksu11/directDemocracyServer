@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { Expo } = require('expo-server-sdk');
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
 const { appCheck } = require('../middleware/appCheck');
@@ -99,6 +100,50 @@ router.post('/me', appCheck, deviceAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /register/me error:', err);
     return res.status(500).json({ error: 'Tietojen haku epäonnistui.' });
+  }
+});
+
+/**
+ * POST /api/register/push-token
+ * Tallentaa laitteen Expo push -tokenin ja käyttäjän valinnan ilmoituksista
+ * (oletuksena päällä). Kutsutaan sovelluksen käynnistyessä (tokenin päivitys)
+ * ja asetuksista kytkintä käytettäessä.
+ *
+ * Body:
+ *   deviceId   {string}  – sama kuin muissa /register-kutsuissa
+ *   isEmulator {boolean}
+ *   pushToken  {string}  – valinnainen, Expon push-token (ExponentPushToken[...]).
+ *                           Jätetään pois kun vain päivitetään enabled-arvo.
+ *   enabled    {boolean} – vaaditaan. false = älä lähetä ilmoituksia tälle laitteelle.
+ */
+router.post('/push-token', appCheck, deviceAuth, async (req, res) => {
+  const { pushToken, enabled } = req.body;
+  const deviceHash = req.deviceHash;
+
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled (boolean) vaaditaan.' });
+  }
+
+  if (pushToken !== undefined && pushToken !== null) {
+    if (typeof pushToken !== 'string' || !Expo.isExpoPushToken(pushToken)) {
+      return res.status(400).json({ error: 'pushToken ei ole validi Expo push -token.' });
+    }
+  }
+
+  try {
+    const db = getDb();
+    await db.collection('users').doc(deviceHash).set(
+      {
+        notificationsEnabled: enabled,
+        ...(pushToken && { pushToken, pushTokenUpdatedAt: new Date() }),
+      },
+      { merge: true }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /register/push-token error:', err);
+    return res.status(500).json({ error: 'Push-tokenin tallennus epäonnistui.' });
   }
 });
 
