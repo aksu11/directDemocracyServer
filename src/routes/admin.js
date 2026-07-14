@@ -66,7 +66,7 @@ router.post('/polls', adminAuth, async (req, res) => {
         if (lastIso) {
           const last = new Date(lastIso);
           const diffMs = Date.now() - last.getTime();
-          const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+          const sevenDaysMs = 1 * 24 * 60 * 60 * 1000; // TESTI: 1 pv (normaalisti 7 * 24 * 60 * 60 * 1000)
           if (diffMs < sevenDaysMs) {
             const allowedAt = new Date(last.getTime() + sevenDaysMs);
             return res.status(429).json({ error: 'Voit luoda uuden äänestyksen kerran viikossa.', allowedAt: allowedAt.toISOString() });
