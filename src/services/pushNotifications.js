@@ -57,4 +57,47 @@ async function sendNewPollNotification(poll, pollId) {
   }
 }
 
-module.exports = { sendNewPollNotification };
+/**
+ * Lähettää push-ilmoituksen KAIKILLE ilmoitukset sallineille käyttäjille joilla on
+ * kelvollinen push-token - ilman äänestyskohtaista kohderyhmärajausta (isEligible),
+ * koska kyse ei ole yksittäisestä äänestyksestä vaan koko sovelluksen päivityksestä,
+ * joka koskee kaikkia käyttäjiä riippumatta maasta/iästä.
+ *
+ * Toisin kuin sendNewPollNotification, tämä EI nieläise virheitä - kutsuja
+ * (admin.js:n POST /admin/notify-update) odottaa vastauksen ja näyttää sen
+ * suoraan adminille, joten virheiden pitää kulkeutua sinne asti.
+ *
+ * @param {string} message
+ * @returns {Promise<number>} kuinka monelle laitteelle ilmoitus lähetettiin
+ */
+async function sendUpdateNotification(message) {
+  const db = getDb();
+  const snapshot = await db.collection('users').get();
+
+  const messages = [];
+  snapshot.docs.forEach((doc) => {
+    const user = doc.data();
+    if (user.notificationsEnabled === false) return;
+    if (!user.pushToken || !Expo.isExpoPushToken(user.pushToken)) return;
+
+    messages.push({
+      to: user.pushToken,
+      sound: 'default',
+      title: 'Sovellus päivittyi',
+      body: message,
+    });
+  });
+
+  const chunks = expo.chunkPushNotifications(messages);
+  for (const chunk of chunks) {
+    try {
+      await expo.sendPushNotificationsAsync(chunk);
+    } catch (err) {
+      console.error('Push-ilmoitusten lähetys epäonnistui (chunk):', err);
+    }
+  }
+
+  return messages.length;
+}
+
+module.exports = { sendNewPollNotification, sendUpdateNotification };

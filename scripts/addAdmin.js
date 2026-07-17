@@ -6,8 +6,10 @@
  *   node scripts/addAdmin.js matti
  */
 
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 const readline = require('readline');
+const { initFirebase } = require('../src/services/firebase');
 const { upsertAdmin } = require('../src/services/admins');
 
 async function main() {
@@ -17,6 +19,8 @@ async function main() {
     console.error('Käyttö: node scripts/addAdmin.js <käyttäjänimi>');
     process.exit(1);
   }
+
+  initFirebase();
 
   // Luetaan salasana stdin:stä jotta se ei jää shell-historiaan
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

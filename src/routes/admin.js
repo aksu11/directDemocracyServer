@@ -8,7 +8,7 @@ const { isValidCountryCode } = require('../data/countryCodes');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { setActiveBanner, resolveImageUrl } = require('../services/banners');
 const { getAppStatus, setAppStatus } = require('../services/appStatus');
-const { sendNewPollNotification } = require('../services/pushNotifications');
+const { sendNewPollNotification, sendUpdateNotification } = require('../services/pushNotifications');
 
 /**
  * GET /api/admin/verify
@@ -251,8 +251,7 @@ router.get('/polls/ended/:pollId', adminAuth, async (req, res) => {
  * kuin äänestyksen scopeCountry-maasta). Toimii sekä aktiivisille että
  * päättyneille (arkistoiduille) äänestyksille.
  */
-router.get('/polls/:pollId/geo', adminAuth, async (req, res) => {
-  try {
+router.get('/polls/:pollId/geo', adminAuth, async (req, res) => {  try {
     const db = getDb();
 
     let pollRef = db.collection('polls').doc(req.params.pollId);
@@ -293,6 +292,37 @@ router.get('/polls/:pollId/geo', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('GET /admin/polls/:pollId/geo error:', err);
     return res.status(500).json({ error: 'Maajakauman haku epäonnistui.' });
+  }
+});
+
+/**
+ * POST /api/admin/notify-update
+ * Lähettää push-ilmoituksen KAIKILLE ilmoitukset sallineille käyttäjille
+ * (ei äänestyskohtaista kohderyhmärajausta) - käytetään kun sovelluksesta
+ * julkaistaan uusi versio ja käyttäjiä halutaan kehottaa päivittämään.
+ * Vain superadmin, koska kyseessä on laaja joukkoviesti kaikille käyttäjille.
+ *
+ * Body: { message: string }
+ */
+router.post('/notify-update', adminAuth, async (req, res) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Vain superadmin voi lähettää päivitysilmoituksia.' });
+  }
+
+  const message = String(req.body.message || '').trim();
+  if (!message) {
+    return res.status(400).json({ error: 'message vaaditaan.' });
+  }
+  if (message.length > 500) {
+    return res.status(400).json({ error: 'Viesti saa olla enintään 500 merkkiä.' });
+  }
+
+  try {
+    const sentCount = await sendUpdateNotification(message);
+    return res.json({ ok: true, sentCount });
+  } catch (err) {
+    console.error('POST /admin/notify-update error:', err);
+    return res.status(500).json({ error: 'Ilmoitusten lähetys epäonnistui.' });
   }
 });
 

@@ -187,6 +187,22 @@
       <div id="statusMessage"></div>
     </div>
 
+    <!-- Uuden version ilmoitus (vain superadmin) -->
+    <div class="card" id="updateCard" style="display:none">
+      <h2>Ilmoitus uudesta versiosta</h2>
+      <p style="font-size:.85rem;color:#71717a;margin-bottom:1rem">
+        Lähettää push-ilmoituksen KAIKILLE ilmoitukset sallineille käyttäjille
+        (ei äänestyskohtaista rajausta). Käytä kun sovelluksesta on julkaistu
+        uusi versio ja haluat kehottaa käyttäjiä päivittämään sen.
+      </p>
+
+      <label for="updateMessage">Viesti käyttäjille</label>
+      <textarea id="updateMessage" rows="3" placeholder="esim. Uusi versio 1.3.0 on nyt saatavilla - päivitä sovelluskaupasta!"></textarea>
+
+      <button class="primary" id="sendUpdateBtn" onclick="sendUpdateNotification()">Lähetä ilmoitus</button>
+      <div id="updateMessageStatus"></div>
+    </div>
+
     <!-- Äänestykset -->
     <div class="card">
       <h2>Aktiiviset äänestykset</h2>
@@ -226,6 +242,7 @@
       document.getElementById('logoutBtn').style.display = 'inline';
       document.getElementById('bannerCard').style.display = currentRole === 'superadmin' ? '' : 'none';
       document.getElementById('statusCard').style.display = currentRole === 'superadmin' ? '' : 'none';
+      document.getElementById('updateCard').style.display = currentRole === 'superadmin' ? '' : 'none';
       if (currentRole === 'superadmin') { loadBanners(); loadStatus(); }
       loadPolls();
     } else {
@@ -242,6 +259,7 @@
     document.getElementById('passwordInput').value = '';
     document.getElementById('bannerCard').style.display = 'none';
     document.getElementById('statusCard').style.display = 'none';
+    document.getElementById('updateCard').style.display = 'none';
   }
 
   async function loadBanners() {
@@ -360,6 +378,42 @@
       }
     } catch (e) {
       msgEl.textContent = 'Tallennus epäonnistui.';
+      msgEl.className = 'error';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function sendUpdateNotification() {
+    const btn = document.getElementById('sendUpdateBtn');
+    const msgEl = document.getElementById('updateMessageStatus');
+    msgEl.className = '';
+    msgEl.style.display = '';
+
+    const message = document.getElementById('updateMessage').value.trim();
+    if (!message) {
+      msgEl.textContent = 'Viesti vaaditaan.';
+      msgEl.className = 'error';
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/admin/notify-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        msgEl.textContent = `Ilmoitus lähetetty ${data.sentCount} käyttäjälle.`;
+        msgEl.className = 'success';
+      } else {
+        msgEl.textContent = data.error || 'Lähetys epäonnistui.';
+        msgEl.className = 'error';
+      }
+    } catch (e) {
+      msgEl.textContent = 'Lähetys epäonnistui.';
       msgEl.className = 'error';
     } finally {
       btn.disabled = false;

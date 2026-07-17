@@ -59,12 +59,27 @@ router.post('/', appCheck, deviceAuth, async (req, res) => {
 
   try {
     const db = getDb();
-    // merge: true sallii sijainnin (ja syntymävuoden) päivittämisen myöhemmin
-    await db.collection('users').doc(deviceHash).set(
+    const userRef = db.collection('users').doc(deviceHash);
+
+    // Syntymävuosi saa asettua vain kerran per laite - jos dokumentissa on jo
+    // birthYear, uutta arvoa EI hyväksytä vaikka client lähettäisi sellaisen
+    // (esim. suoralla API-kutsulla ohi Asetukset-näytön kertaluontoisen UI:n).
+    // Muuten ikärajan (isPolitical-äänestykset) tarkoitus menettäisi merkityksensä,
+    // koska käyttäjä voisi muuttaa syntymävuottaan aina halutessaan äänestää.
+    let birthYearToSet = birthYearValue;
+    if (birthYearValue !== undefined) {
+      const existing = await userRef.get();
+      if (existing.exists && existing.data().birthYear !== undefined) {
+        birthYearToSet = undefined;
+      }
+    }
+
+    // merge: true sallii sijainnin päivittämisen myöhemmin
+    await userRef.set(
       {
         country: countryCode,
         platform: platformValue,
-        ...(birthYearValue !== undefined && { birthYear: birthYearValue }),
+        ...(birthYearToSet !== undefined && { birthYear: birthYearToSet }),
         registeredAt: new Date(),
       },
       { merge: true }
@@ -112,8 +127,11 @@ router.post('/me', appCheck, deviceAuth, async (req, res) => {
  * Body:
  *   deviceId   {string}  – sama kuin muissa /register-kutsuissa
  *   isEmulator {boolean}
- *   pushToken  {string}  – valinnainen, Expon push-token (ExponentPushToken[...]).
- *                           Jätetään pois kun vain päivitetään enabled-arvo.
+ *   pushToken  {string|null} – valinnainen. Merkkijono tallentaa uuden Expo push -tokenin,
+ *                           `null` nollaa tallennetun tokenin eksplisiittisesti (esim. kun
+ *                           käyttöjärjestelmän ilmoituslupaa ei ole myönnetty eikä tokenia
+ *                           siis voida hankkia), ja kentän jättäminen kokonaan pois tarkoittaa
+ *                           ettei tokenia päivitetä (esim. pelkkää enabled-arvoa vaihdettaessa).
  *   enabled    {boolean} – vaaditaan. false = älä lähetä ilmoituksia tälle laitteelle.
  */
 router.post('/push-token', appCheck, deviceAuth, async (req, res) => {
@@ -135,7 +153,13 @@ router.post('/push-token', appCheck, deviceAuth, async (req, res) => {
     await db.collection('users').doc(deviceHash).set(
       {
         notificationsEnabled: enabled,
-        ...(pushToken && { pushToken, pushTokenUpdatedAt: new Date() }),
+        // pushToken === undefined -> ei koskea kenttään lainkaan (merge:true säilyttää vanhan).
+        // pushToken === null      -> nollataan eksplisiittisesti (kirjoitetaan null, ei jätetä pois).
+        // pushToken === string    -> tallennetaan uusi token.
+        ...(pushToken !== undefined && {
+          pushToken,
+          pushTokenUpdatedAt: pushToken ? new Date() : null,
+        }),
       },
       { merge: true }
     );
