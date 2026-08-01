@@ -9,11 +9,19 @@ const { ENDED_COLLECTION } = require('../services/pollArchive');
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'https://directdemocracy-4yjp.onrender.com').replace(/\/+$/, '');
 
 // Minne käyttäjä ohjataan jos sovellusta ei ole asennettu (tai App Links ei
-// osu). Kunnes sovellus on Play Storessa, tämä osoittaa olemassa olevalle
-// esittelysivulle. Vaihda PLAY_STORE_URL kun sovellus julkaistaan.
+// osu). Android-laitteet ohjataan Play Kauppaan (asennus onnistuu suoraan),
+// muut (desktop, iOS/Apple) esittelysivulle - Play Store -linkki ei auta heitä
+// mitenkään. Kunnes sovellus on julkaistu Play Storessa, PLAY_STORE_URL on
+// tyhjä ja kaikki päätyvät esittelysivulle. Vaihda PLAY_STORE_URL kun
+// sovellus julkaistaan.
 const PLAY_STORE_URL = (process.env.PLAY_STORE_URL || '').trim();
 const LANDING_PAGE_URL = process.env.LANDING_PAGE_URL || 'https://directdemocracy-zmon.onrender.com/';
-const FALLBACK_URL = PLAY_STORE_URL || LANDING_PAGE_URL;
+
+/** Android-laitteet Play Kauppaan (jos asetettu), kaikki muut esittelysivulle. */
+function resolveFallbackUrl(userAgent) {
+  const isAndroid = /Android/i.test(userAgent || '');
+  return isAndroid && PLAY_STORE_URL ? PLAY_STORE_URL : LANDING_PAGE_URL;
+}
 
 // JPEG eikä PNG, koska WhatsApp hylkää hiljaisesti liian suuret og:image-tiedostot
 // (alkuperäinen PNG oli ~1 MB, JPEG-pakkauksella ~100 KB).
@@ -28,11 +36,11 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function renderSharePage({ title, description, url, imageUrl, imageType }) {
+function renderSharePage({ title, description, url, imageUrl, imageType, fallbackUrl }) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const safeUrl = escapeHtml(url);
-  const safeFallback = escapeHtml(FALLBACK_URL);
+  const safeFallback = escapeHtml(fallbackUrl);
   const safeImage = escapeHtml(imageUrl || OG_IMAGE_URL);
 
   return `<!DOCTYPE html>
@@ -60,7 +68,7 @@ function renderSharePage({ title, description, url, imageUrl, imageType }) {
   // Twitter yms.) eivät suorita JavaScriptiä, joten ne pysähtyvät lukemaan tämän
   // sivun omat OG-tagit sen sijaan että seuraisivat uudelleenohjausta ja päätyisivät
   // lukemaan laskeutumissivun tagit (mikä aiemmin aiheutti väärän otsikon/kuvan).
-  window.location.replace(${JSON.stringify(FALLBACK_URL)});
+  window.location.replace(${JSON.stringify(fallbackUrl)});
 </script>
 </body>
 </html>`;
@@ -91,6 +99,8 @@ router.get(['/polls/:id', '/ended/:id'], async (req, res) => {
   const kind = req.path.startsWith('/ended') ? 'ended' : 'polls';
   const pollId = req.params.id;
 
+  const fallbackUrl = resolveFallbackUrl(req.header('User-Agent'));
+
   try {
     const poll = await findPoll(pollId);
     const url = `${PUBLIC_BASE_URL}/${kind}/${pollId}`;
@@ -101,6 +111,7 @@ router.get(['/polls/:id', '/ended/:id'], async (req, res) => {
         title: 'Äänestystä ei löytynyt',
         description: 'Suora Demokratia – suoran demokratian äänestyssovellus.',
         url,
+        fallbackUrl,
       }));
     }
 
@@ -116,7 +127,7 @@ router.get(['/polls/:id', '/ended/:id'], async (req, res) => {
     const imageType = poll.ended ? 'image/png' : undefined;
 
     res.set('Content-Type', 'text/html; charset=utf-8');
-    return res.send(renderSharePage({ title: poll.question, description, url, imageUrl, imageType }));
+    return res.send(renderSharePage({ title: poll.question, description, url, imageUrl, imageType, fallbackUrl }));
   } catch (err) {
     console.error(`GET /${kind}/:id (share) error:`, err);
     return res.status(500).send('Internal server error.');
