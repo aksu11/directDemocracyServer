@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -21,7 +22,8 @@
     "google-auth-library": "^10.9.0",
     "helmet": "^8.2.0",
     "marked": "^5.0.2",
-    "sanitize-html": "^2.11.0"
+    "sanitize-html": "^2.11.0",
+    "satori": "^0.29.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

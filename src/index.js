@@ -11,6 +11,7 @@ const adminRouter = require('./routes/admin');
 const registerRouter = require('./routes/register');
 const geoRouter      = require('./routes/geo');
 const shareRouter    = require('./routes/share');
+const shareImageRouter = require('./routes/shareImage');
 const wellKnownRouter = require('./routes/wellKnown');
 const statusRouter    = require('./routes/status');
 const accountDeletionRouter = require('./routes/accountDeletion');
@@ -105,6 +106,9 @@ app.use('/api/status', statusRouter);
 // Jaettavat äänestyslinkit (/polls/:id, /ended/:id) – palvelinpuolella renderöity
 // HTML Open Graph -tageilla somejakoa varten + fallback niille joilla appia ei ole.
 app.use(shareRouter);
+
+// Päättyneen äänestyksen tulosnäkymä og:image-kuvana (ks. routes/share.js).
+app.use(shareImageRouter);
 
 // Tilin/tietojen poisto -ohjesivu (Google Play -tietosuojaosion vaatima linkki).
 app.use(accountDeletionRouter);

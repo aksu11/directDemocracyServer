@@ -175,26 +175,32 @@ router.get('/status', adminAuth, async (req, res) => {
 /**
  * POST /api/admin/status
  * Päivittää sovelluksen huoltokatkotilan (vain superadmin).
- * Body: { maintenanceMode: boolean, message: string, announceFrom?: ISO string|null, estimatedEnd?: ISO string|null }
+ * Body: { maintenanceMode: boolean, message: string, announceFrom?: ISO string|null, estimatedEnd?: ISO string|null, latestVersion?: string|null, updateMessage?: string }
  *
  * - announceFrom: milloin ennakkoilmoitus alkaa näkyä sovelluksen äänestyslistan
  *   bannerin paikalla (huoltokatko ei vielä käynnissä).
  * - maintenanceMode: kun true, sovellus näyttää lukitusnäytön "message"-viestillä
  *   koko äänestyslistan sijaan (käytetään kun palvelin on oikeasti pois käytöstä).
+ * - latestVersion: uusin julkaistu versionumero (esim. "1.3.0"), jota vastaan
+ *   sovellus vertaa omaa versiotaan näyttääkseen päivityskehotusbannerin.
  */
 router.post('/status', adminAuth, async (req, res) => {
   if (req.adminRole !== 'superadmin') {
     return res.status(403).json({ error: 'Vain superadmin voi hallita huoltokatkoja.' });
   }
 
-  const { maintenanceMode, message, announceFrom, estimatedEnd } = req.body;
+  const { maintenanceMode, message, announceFrom, estimatedEnd, latestVersion, updateMessage } = req.body;
 
   if (maintenanceMode === true && (!message || !String(message).trim())) {
     return res.status(400).json({ error: 'Viesti vaaditaan kun huoltokatko on käynnissä.' });
   }
 
+  if (latestVersion && !/^\d+(\.\d+){0,2}$/.test(String(latestVersion).trim())) {
+    return res.status(400).json({ error: 'Versionumero täytyy olla muotoa "1.2.3".' });
+  }
+
   try {
-    const status = await setAppStatus({ maintenanceMode, message, announceFrom, estimatedEnd });
+    const status = await setAppStatus({ maintenanceMode, message, announceFrom, estimatedEnd, latestVersion, updateMessage });
     return res.json(status);
   } catch (err) {
     console.error('POST /admin/status error:', err);

@@ -28,12 +28,12 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function renderSharePage({ title, description, url }) {
+function renderSharePage({ title, description, url, imageUrl, imageType }) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const safeUrl = escapeHtml(url);
   const safeFallback = escapeHtml(FALLBACK_URL);
-  const safeImage = escapeHtml(OG_IMAGE_URL);
+  const safeImage = escapeHtml(imageUrl || OG_IMAGE_URL);
 
   return `<!DOCTYPE html>
 <html lang="fi">
@@ -46,7 +46,7 @@ function renderSharePage({ title, description, url }) {
 <meta property="og:title" content="${safeTitle}" />
 <meta property="og:description" content="${safeDescription}" />
 <meta property="og:image" content="${safeImage}" />
-<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:type" content="${imageType || 'image/jpeg'}" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:url" content="${safeUrl}" />
@@ -110,8 +110,13 @@ router.get(['/polls/:id', '/ended/:id'], async (req, res) => {
         ? String(poll.description).slice(0, 200)
         : 'Osallistu äänestykseen Suora Demokratia -sovelluksessa.');
 
+    // Päättyneelle äänestykselle jaetaan geneerisen maisemakuvan sijaan
+    // renderöity tulosnäkymä (ks. routes/shareImage.js).
+    const imageUrl = poll.ended ? `${PUBLIC_BASE_URL}/share-image/ended/${pollId}` : undefined;
+    const imageType = poll.ended ? 'image/png' : undefined;
+
     res.set('Content-Type', 'text/html; charset=utf-8');
-    return res.send(renderSharePage({ title: poll.question, description, url }));
+    return res.send(renderSharePage({ title: poll.question, description, url, imageUrl, imageType }));
   } catch (err) {
     console.error(`GET /${kind}/:id (share) error:`, err);
     return res.status(500).send('Internal server error.');

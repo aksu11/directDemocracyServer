@@ -8,6 +8,8 @@ const DEFAULT_STATUS = {
   message: '',
   announceFrom: null,
   estimatedEnd: null,
+  latestVersion: null,
+  updateMessage: '',
 };
 
 function toIsoOrNull(value) {
@@ -33,19 +35,27 @@ async function getAppStatus() {
     message: typeof data.message === 'string' ? data.message : '',
     announceFrom: toIsoOrNull(data.announceFrom),
     estimatedEnd: toIsoOrNull(data.estimatedEnd),
+    latestVersion: typeof data.latestVersion === 'string' && data.latestVersion ? data.latestVersion : null,
+    updateMessage: typeof data.updateMessage === 'string' ? data.updateMessage : '',
   };
 }
 
 /**
  * Päivittää sovelluksen huoltokatkotilan (vain superadmin, ks. routes/admin.js).
+ *
+ * latestVersion: uusin Play Storeen/App Storeen julkaistu versionumero (esim.
+ * "1.3.0"). Sovellus vertaa tätä omaan app.json:in versioonsa ja näyttää
+ * päivityskehotusbannerin jos oma versio on tätä vanhempi.
  */
-async function setAppStatus({ maintenanceMode, message, announceFrom, estimatedEnd }) {
+async function setAppStatus({ maintenanceMode, message, announceFrom, estimatedEnd, latestVersion, updateMessage }) {
   const db = getDb();
   const data = {
     maintenanceMode: maintenanceMode === true,
     message: typeof message === 'string' ? message.trim().slice(0, 500) : '',
     announceFrom: announceFrom ? new Date(announceFrom) : null,
     estimatedEnd: estimatedEnd ? new Date(estimatedEnd) : null,
+    latestVersion: typeof latestVersion === 'string' && latestVersion.trim() ? latestVersion.trim().slice(0, 20) : null,
+    updateMessage: typeof updateMessage === 'string' ? updateMessage.trim().slice(0, 500) : '',
     updatedAt: new Date(),
   };
   await db.collection(CONFIG_COLLECTION).doc(STATUS_DOC_ID).set(data, { merge: true });
