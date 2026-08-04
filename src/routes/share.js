@@ -23,9 +23,19 @@ function resolveFallbackUrl(userAgent) {
   return isAndroid && PLAY_STORE_URL ? PLAY_STORE_URL : LANDING_PAGE_URL;
 }
 
+// Kasvatetaan aina kun jakokuvien (dd-share.jpg TAI resultImage.js:n
+// piirtämä päättyneen äänestyksen kuva) ulkoasu muuttuu. Facebook/WhatsApp
+// yms. cachettaavat og:image-tiedoston omalla puolellaan pitkäksi aikaa eivätkä
+// välttämättä hae sitä uudelleen vaikka sivun "Scrape Again" ajetaan - vain
+// itse kuva-URL:n muuttuminen pakottaa tuoreen haun. Muista kasvattaa tätä
+// aina kun kuvan ulkoasua muutetaan, olipa kyse staattisesta tai dynaamisesta
+// kuvasta (ks. 2026-08-04: 300x300 QR-koodin lisäys jäi jumiin vanhaan
+// cachettuun kuvaan ilman tätä).
+const IMAGE_VERSION = 2;
+
 // JPEG eikä PNG, koska WhatsApp hylkää hiljaisesti liian suuret og:image-tiedostot
 // (alkuperäinen PNG oli ~1 MB, JPEG-pakkauksella ~100 KB).
-const OG_IMAGE_URL = process.env.OG_IMAGE_URL || `${PUBLIC_BASE_URL}/share/dd-share.jpg`;
+const OG_IMAGE_URL = process.env.OG_IMAGE_URL || `${PUBLIC_BASE_URL}/share/dd-share.jpg?v=${IMAGE_VERSION}`;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -123,7 +133,7 @@ router.get(['/polls/:id', '/ended/:id'], async (req, res) => {
 
     // Päättyneelle äänestykselle jaetaan geneerisen maisemakuvan sijaan
     // renderöity tulosnäkymä (ks. routes/shareImage.js).
-    const imageUrl = poll.ended ? `${PUBLIC_BASE_URL}/share-image/ended/${pollId}` : undefined;
+    const imageUrl = poll.ended ? `${PUBLIC_BASE_URL}/share-image/ended/${pollId}?v=${IMAGE_VERSION}` : undefined;
     const imageType = poll.ended ? 'image/png' : undefined;
 
     res.set('Content-Type', 'text/html; charset=utf-8');
