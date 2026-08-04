@@ -24,6 +24,11 @@ const COLORS = {
 // vaihtoehtoja piirretä loputtomasti - Satori/Resvg ei vieritä ylivuotavaa sisältöä.
 const MAX_OPTIONS = 6;
 
+// Riittävän iso että kamerat tunnistavat QR-koodin luotettavasti myös pienestä
+// esikatselukuvasta - tarkoituksella isompi kuin ympäröivä sisältö vaatisi, ja
+// saa peittää alla olevaa sisältöä.
+const QR_SIZE = 300;
+
 function truncate(text, maxLength) {
   if (!text) return '';
   const trimmed = String(text).trim();
@@ -83,25 +88,13 @@ function buildTree(poll, qrDataUrl) {
 
     h('div', {
       marginTop: 'auto',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-end',
-    }, [
-      qrDataUrl
-        ? h('div', {
-            backgroundColor: '#FFFFFF',
-            borderRadius: 8,
-            padding: 8,
-          }, [img(qrDataUrl, 84)])
-        : h('div', {}, []),
-      h('div', {
-        fontSize: 18,
-        color: COLORS.textSecondary,
-      }, 'Suora Demokratia'),
-    ]),
+      justifyContent: 'flex-end',
+      fontSize: 18,
+      color: COLORS.textSecondary,
+    }, 'Suora Demokratia'),
   ].filter(Boolean);
 
-  return h('div', {
+  const content = h('div', {
     width: WIDTH,
     height: HEIGHT,
     flexDirection: 'column',
@@ -109,6 +102,21 @@ function buildTree(poll, qrDataUrl) {
     padding: '56px 64px',
     fontFamily: 'Roboto',
   }, children);
+
+  if (!qrDataUrl) return content;
+
+  // Absoluuttisesti aivan vasempaan alakulmaan (0,0-suhteessa koko kuvaan, ei
+  // sisällön paddingiin) - tarkoituksella tarpeeksi iso (300x300) että kamerat
+  // tunnistavat sen luotettavasti, vaikka se peittäisi alla olevaa sisältöä.
+  const qrOverlay = h('div', {
+    position: 'absolute',
+    left: 0,
+    bottom: 0,
+    width: QR_SIZE,
+    height: QR_SIZE,
+  }, [img(qrDataUrl, QR_SIZE)]);
+
+  return h('div', { width: WIDTH, height: HEIGHT, position: 'relative' }, [content, qrOverlay]);
 }
 
 /**
@@ -123,7 +131,7 @@ function buildTree(poll, qrDataUrl) {
  */
 async function renderEndedPollImage(poll, pollUrl) {
   const qrDataUrl = pollUrl
-    ? await QRCode.toDataURL(pollUrl, { margin: 0, width: 240 })
+    ? await QRCode.toDataURL(pollUrl, { margin: 2, width: QR_SIZE })
     : null;
 
   const svg = await satori(buildTree(poll, qrDataUrl), {
