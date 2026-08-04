@@ -5,6 +5,10 @@ const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { withPercentages } = require('../services/pollFormat');
 const { renderEndedPollImage } = require('../services/resultImage');
 
+// Sama julkinen osoite kuin routes/share.js:ssä - käytetään QR-koodin
+// sisältämän äänestyslinkin (pollUrl) rakentamiseen resultImage.js:lle.
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'https://directdemocracy-4yjp.onrender.com').replace(/\/+$/, '');
+
 // Päättyneen äänestyksen tulokset eivät enää muutu, joten kuva riittää
 // renderöidä kerran per äänestys ja pitää muistissa - ei tarvetta ajastimelle
 // tai levylle tallentamiselle. Yläraja estää muistin kasvamisen rajattomasti,
@@ -36,7 +40,8 @@ router.get('/share-image/ended/:pollId', async (req, res) => {
       if (!doc.exists) return res.status(404).end();
 
       const poll = withPercentages(doc.data());
-      image = await renderEndedPollImage(poll);
+      const pollUrl = `${PUBLIC_BASE_URL}/ended/${pollId}`;
+      image = await renderEndedPollImage(poll, pollUrl);
       cacheImage(pollId, image);
     }
 

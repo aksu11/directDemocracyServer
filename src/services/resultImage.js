@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const satori = require('satori').default;
 const { Resvg } = require('@resvg/resvg-js');
+const QRCode = require('qrcode');
 
 // Open Graph -kuvien vakiokoko (ks. myös routes/share.js:n og:image:width/height).
 const WIDTH = 1200;
@@ -33,7 +34,11 @@ function h(type, style, children) {
   return { type, props: { style: { display: 'flex', ...style }, children } };
 }
 
-function buildTree(poll) {
+function img(src, size) {
+  return { type: 'img', props: { src, width: size, height: size, style: { display: 'flex' } } };
+}
+
+function buildTree(poll, qrDataUrl) {
   const options = poll.options.slice(0, MAX_OPTIONS);
 
   const children = [
@@ -78,10 +83,22 @@ function buildTree(poll) {
 
     h('div', {
       marginTop: 'auto',
-      justifyContent: 'flex-end',
-      fontSize: 18,
-      color: COLORS.textSecondary,
-    }, 'Suora Demokratia'),
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+    }, [
+      qrDataUrl
+        ? h('div', {
+            backgroundColor: '#FFFFFF',
+            borderRadius: 8,
+            padding: 8,
+          }, [img(qrDataUrl, 84)])
+        : h('div', {}, []),
+      h('div', {
+        fontSize: 18,
+        color: COLORS.textSecondary,
+      }, 'Suora Demokratia'),
+    ]),
   ].filter(Boolean);
 
   return h('div', {
@@ -96,12 +113,20 @@ function buildTree(poll) {
 
 /**
  * Renderöi päättyneen äänestyksen tulosnäkymän (otsikko - kuvaus - "Lopullinen
- * tulos:" - vaihtoehdot prosentteineen - "Suora Demokratia") PNG-kuvaksi
+ * tulos:" - vaihtoehdot prosentteineen - QR-koodi + "Suora Demokratia") PNG-kuvaksi
  * somejakoa varten. `poll.options`-kentässä on oltava jo valmiiksi lasketut
  * `percentage`-arvot (ks. services/pollFormat.js:n withPercentages).
+ *
+ * `pollUrl` on valinnainen - jos annettu, kuvan vasempaan alakulmaan piirretään
+ * QR-koodi joka johtaa suoraan tähän äänestykseen (sama osoite kuin sivun
+ * og:url, ks. routes/share.js). Ilman sitä QR-koodi jätetään pois.
  */
-async function renderEndedPollImage(poll) {
-  const svg = await satori(buildTree(poll), {
+async function renderEndedPollImage(poll, pollUrl) {
+  const qrDataUrl = pollUrl
+    ? await QRCode.toDataURL(pollUrl, { margin: 0, width: 240 })
+    : null;
+
+  const svg = await satori(buildTree(poll, qrDataUrl), {
     width: WIDTH,
     height: HEIGHT,
     fonts: [
