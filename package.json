@@ -21,6 +21,7 @@
     "geoip-lite": "^1.4.10",
     "google-auth-library": "^10.9.0",
     "helmet": "^8.2.0",
+    "joi": "^18.2.3",
     "marked": "^5.0.2",
     "qrcode": "^1.5.4",
     "sanitize-html": "^2.11.0",

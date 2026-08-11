@@ -1,14 +1,58 @@
 const express = require('express');
 const router = express.Router();
+const Joi = require('joi');
 const { getDb } = require('../services/firebase');
 const { adminAuth } = require('../middleware/adminAuth');
+const { validate, validateValue } = require('../middleware/validate');
+const { firestoreIdRule } = require('../schemas/common');
 const { getLastCreatedAt, setLastCreatedAt } = require('../services/admins');
-const { validateScope } = require('../data/geography');
-const { isValidCountryCode } = require('../data/countryCodes');
+const { GEOGRAPHIC_SCOPES } = require('../data/geography');
+const { COUNTRY_CODES } = require('../data/countryCodes');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { setActiveBanner, resolveImageUrl } = require('../services/banners');
 const { getAppStatus, setAppStatus } = require('../services/appStatus');
 const { sendNewPollNotification, sendUpdateNotification } = require('../services/pushNotifications');
+
+const pollIdParamSchema = Joi.object({ pollId: firestoreIdRule.required() }).unknown(true);
+const bannerIdParamSchema = Joi.object({ id: firestoreIdRule.required() }).unknown(true);
+
+// endsAt jätetään pois skeemasta - sen nykyinen tarkistus (presence + formaatti +
+// tulevaisuudessa-vaatimus) tehdään yhä käsin handlerissa, ks. alempana.
+const createPollBodySchema = Joi.object({
+  question: Joi.string().trim().min(1).max(300).required(),
+  options: Joi.array()
+    .items(Joi.string().trim().min(1).max(200))
+    .min(2)
+    .max(20)
+    .required(),
+  scope: Joi.string()
+    .valid(...GEOGRAPHIC_SCOPES)
+    .required()
+    .messages({ 'any.only': `scope täytyy olla jokin seuraavista: ${GEOGRAPHIC_SCOPES.join(', ')}.` }),
+  scopeCountry: Joi.string()
+    .uppercase()
+    .valid(...COUNTRY_CODES)
+    .when('scope', { is: 'country', then: Joi.required(), otherwise: Joi.optional() })
+    .messages({ 'any.only': 'scopeCountry täytyy olla validi ISO 3166-1 alpha-2 -maakoodi.' }),
+  description: Joi.string().trim().max(2000).allow('', null).optional().label('Kuvaus'),
+  requiresLogin: Joi.boolean().strict().optional(),
+  isPolitical: Joi.boolean().strict().optional(),
+}).unknown(true);
+
+const updateStatusBodySchema = Joi.object({
+  maintenanceMode: Joi.boolean().strict().optional(),
+  message: Joi.string().trim().max(500).allow('').optional(),
+  announceFrom: Joi.date().iso().allow(null).optional(),
+  estimatedEnd: Joi.date().iso().allow(null).optional(),
+  latestVersion: Joi.string()
+    .trim()
+    .max(20)
+    .pattern(/^\d+(\.\d+){0,2}$/)
+    .allow(null, '')
+    .optional()
+    .messages({ 'string.pattern.base': 'Versionumero täytyy olla muotoa "1.2.3".' }),
+  updateMessage: Joi.string().trim().max(500).allow('').optional(),
+}).unknown(true);
 
 /**
  * GET /api/admin/verify
@@ -24,39 +68,16 @@ router.get('/verify', adminAuth, (req, res) => {
  *
  * Body: { question: string, options: string[], endsAt: string (ISO 8601), requiresLogin?: boolean, isPolitical?: boolean }
  */
-router.post('/polls', adminAuth, async (req, res) => {
+router.post('/polls', adminAuth, validate(createPollBodySchema, 'body'), async (req, res) => {
   const { question, options, endsAt, scope, scopeCountry, description, requiresLogin, isPolitical } = req.body;
-
-  if (!question || !Array.isArray(options) || options.length < 2) {
-    return res.status(400).json({ error: 'question ja vähintään 2 options vaaditaan.' });
-  }
 
   const endsAtDate = endsAt ? new Date(endsAt) : null;
   if (!endsAtDate || isNaN(endsAtDate.getTime()) || endsAtDate <= new Date()) {
     return res.status(400).json({ error: 'endsAt vaaditaan ja sen täytyy olla tulevaisuudessa.' });
   }
 
-  const scopeError = validateScope(scope, scopeCountry);
-  if (scopeError) {
-    return res.status(400).json({ error: scopeError });
-  }
-
-  let scopeCountryCode;
-  if (scope === 'country') {
-    scopeCountryCode = String(scopeCountry).trim().toUpperCase();
-    if (!isValidCountryCode(scopeCountryCode)) {
-      return res.status(400).json({ error: 'scopeCountry täytyy olla validi ISO 3166-1 alpha-2 -maakoodi.' });
-    }
-  }
-
-  // Validate optional description (max 2000 chars)
-  if (description && typeof description !== 'string') {
-    return res.status(400).json({ error: 'Kuvaus täytyy olla tekstiä.' });
-  }
-  const descTrim = description ? String(description).trim() : null;
-  if (descTrim && descTrim.length > 2000) {
-    return res.status(400).json({ error: 'Kuvaus saa olla enintään 2000 merkkiä.' });
-  }
+  const scopeCountryCode = scope === 'country' ? scopeCountry : undefined;
+  const descTrim = description || null;
 
   try {
     // Rate limit: one poll per admin per 7 days, exempt superadmins
@@ -140,7 +161,7 @@ router.get('/banners', adminAuth, async (req, res) => {
  * ja poistaa aktiivisuuden muilta bannereilta (vain yksi kerrallaan). Vain
  * superadmin voi vaihtaa banneria.
  */
-router.post('/banners/:id/activate', adminAuth, async (req, res) => {
+router.post('/banners/:id/activate', adminAuth, validate(bannerIdParamSchema, 'params'), async (req, res) => {
   if (req.adminRole !== 'superadmin') {
     return res.status(403).json({ error: 'Vain superadmin voi hallita bannereita.' });
   }
@@ -189,14 +210,18 @@ router.post('/status', adminAuth, async (req, res) => {
     return res.status(403).json({ error: 'Vain superadmin voi hallita huoltokatkoja.' });
   }
 
+  // Validoidaan body vasta superadmin-tarkistuksen jälkeen, jotta väärä rooli
+  // palauttaa yhä 403:n eikä 400:aa vaikka body olisi myös virheellinen.
+  const { error: statusError, value: statusBody } = validateValue(updateStatusBodySchema, req.body);
+  if (statusError) {
+    return res.status(400).json({ error: statusError });
+  }
+  req.body = statusBody;
+
   const { maintenanceMode, message, announceFrom, estimatedEnd, latestVersion, updateMessage } = req.body;
 
   if (maintenanceMode === true && (!message || !String(message).trim())) {
     return res.status(400).json({ error: 'Viesti vaaditaan kun huoltokatko on käynnissä.' });
-  }
-
-  if (latestVersion && !/^\d+(\.\d+){0,2}$/.test(String(latestVersion).trim())) {
-    return res.status(400).json({ error: 'Versionumero täytyy olla muotoa "1.2.3".' });
   }
 
   try {
@@ -233,7 +258,7 @@ router.get('/polls/ended', adminAuth, async (req, res) => {
  * GET /api/admin/polls/ended/:pollId
  * Palauttaa yhden päättyneen äänestyksen todellisilla äänimäärillä (vain admin).
  */
-router.get('/polls/ended/:pollId', adminAuth, async (req, res) => {
+router.get('/polls/ended/:pollId', adminAuth, validate(pollIdParamSchema, 'params'), async (req, res) => {
   try {
     const db = getDb();
     const doc = await db.collection(ENDED_COLLECTION).doc(req.params.pollId).get();
@@ -257,7 +282,8 @@ router.get('/polls/ended/:pollId', adminAuth, async (req, res) => {
  * kuin äänestyksen scopeCountry-maasta). Toimii sekä aktiivisille että
  * päättyneille (arkistoiduille) äänestyksille.
  */
-router.get('/polls/:pollId/geo', adminAuth, async (req, res) => {  try {
+router.get('/polls/:pollId/geo', adminAuth, validate(pollIdParamSchema, 'params'), async (req, res) => {
+  try {
     const db = getDb();
 
     let pollRef = db.collection('polls').doc(req.params.pollId);

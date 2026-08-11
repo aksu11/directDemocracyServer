@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/firebase');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
+const { isValidFirestoreId } = require('../schemas/common');
 
 // Tämän palvelimen oma julkinen https-osoite (sama domain joka pitää olla
 // expo-app/app.json:in android.intentFilters-määrityksessä ja
@@ -112,7 +113,10 @@ router.get(['/polls/:id', '/ended/:id'], async (req, res) => {
   const fallbackUrl = resolveFallbackUrl(req.header('User-Agent'));
 
   try {
-    const poll = await findPoll(pollId);
+    // Virheellinen pollId (esim. sisältää '/') ohjataan suoraan alla olevaan
+    // not-found-haaraan sen sijaan että se päätyisi Firestoren .doc()-kutsuun,
+    // joka heittäisi synkronisen virheen ja näyttäytyisi 500:na.
+    const poll = isValidFirestoreId(pollId) ? await findPoll(pollId) : null;
     const url = `${PUBLIC_BASE_URL}/${kind}/${pollId}`;
 
     if (!poll) {

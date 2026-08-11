@@ -51,11 +51,11 @@ async function setAppStatus({ maintenanceMode, message, announceFrom, estimatedE
   const db = getDb();
   const data = {
     maintenanceMode: maintenanceMode === true,
-    message: typeof message === 'string' ? message.trim().slice(0, 500) : '',
+    message: typeof message === 'string' ? message.trim() : '',
     announceFrom: announceFrom ? new Date(announceFrom) : null,
     estimatedEnd: estimatedEnd ? new Date(estimatedEnd) : null,
-    latestVersion: typeof latestVersion === 'string' && latestVersion.trim() ? latestVersion.trim().slice(0, 20) : null,
-    updateMessage: typeof updateMessage === 'string' ? updateMessage.trim().slice(0, 500) : '',
+    latestVersion: typeof latestVersion === 'string' && latestVersion.trim() ? latestVersion.trim() : null,
+    updateMessage: typeof updateMessage === 'string' ? updateMessage.trim() : '',
     updatedAt: new Date(),
   };
   await db.collection(CONFIG_COLLECTION).doc(STATUS_DOC_ID).set(data, { merge: true });

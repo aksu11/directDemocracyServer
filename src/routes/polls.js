@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const Joi = require('joi');
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
+const { validate } = require('../middleware/validate');
+const { firestoreIdRule } = require('../schemas/common');
 const { isEligible } = require('../data/geography');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { getActiveBanner } = require('../services/banners');
@@ -10,6 +13,8 @@ const { marked } = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
 marked.setOptions({ mangle: false, headerIds: false });
+
+const pollIdParamSchema = Joi.object({ pollId: firestoreIdRule.required() }).unknown(true);
 
 /** Muuntaa Markdown-kuvauksen sanitoiduksi HTML:ksi. */
 function renderDescriptionHtml(description) {
@@ -114,7 +119,7 @@ router.post('/ended/eligible', deviceAuth, async (req, res) => {
  * GET /api/polls/ended/:pollId
  * Returns a single archived (ended) poll with its final results.
  */
-router.get('/ended/:pollId', async (req, res) => {
+router.get('/ended/:pollId', validate(pollIdParamSchema, 'params'), async (req, res) => {
   try {
     const db = getDb();
     const doc = await db.collection(ENDED_COLLECTION).doc(req.params.pollId).get();
@@ -150,7 +155,7 @@ router.get('/banner', async (req, res) => {
  * GET /api/polls/:pollId
  * Returns a single poll with its options, vote counts and end time.
  */
-router.get('/:pollId', async (req, res) => {
+router.get('/:pollId', validate(pollIdParamSchema, 'params'), async (req, res) => {
   try {
     const db = getDb();
     const doc = await db.collection('polls').doc(req.params.pollId).get();

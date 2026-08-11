@@ -1,12 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const Joi = require('joi');
 const { getDb } = require('../services/firebase');
 const { deviceAuth } = require('../middleware/deviceAuth');
 const { appCheck } = require('../middleware/appCheck');
+const { validate } = require('../middleware/validate');
+const { firestoreIdRule } = require('../schemas/common');
 const { isEligible, hasMinimumAge, MIN_POLITICAL_AGE } = require('../data/geography');
 const { verifyGoogleIdToken } = require('../services/googleAuth');
 const { lookupCountry } = require('../services/geoIp');
 const { isRateLimited } = require('../services/voteRateLimiter');
+
+const pollIdParamSchema = Joi.object({ pollId: firestoreIdRule.required() }).unknown(true);
+
+// optionId:lle ei aseteta ylärajaa tässä, koska se riippuu poll.options.length:sta
+// (haetaan Firestoresta alla) - dynaaminen yläraja tarkistetaan yhä käsin.
+const castVoteBodySchema = Joi.object({
+  pollId: firestoreIdRule.required(),
+  optionId: Joi.number().integer().min(0).required(),
+  googleIdToken: Joi.string().optional(),
+}).unknown(true);
 
 /**
  * POST /api/votes
@@ -19,13 +32,9 @@ const { isRateLimited } = require('../services/voteRateLimiter');
  *   optionId      {number}  – index of the chosen option
  *   googleIdToken {string}  – vaaditaan jos äänestys on merkitty requiresLogin: true
  */
-router.post('/', appCheck, deviceAuth, async (req, res) => {
+router.post('/', appCheck, deviceAuth, validate(castVoteBodySchema, 'body'), async (req, res) => {
   const { pollId, optionId, googleIdToken } = req.body;
   const deviceHash = req.deviceHash;
-
-  if (pollId === undefined || optionId === undefined) {
-    return res.status(400).json({ error: 'pollId and optionId are required.' });
-  }
 
   // Anomaliaseuranta: hylkää jos samasta IP-osoitteesta tulee poikkeavan
   // paljon äänestyksiä lyhyessä ajassa (esim. VPN-/datacenter-pohjainen
@@ -124,7 +133,7 @@ router.post('/', appCheck, deviceAuth, async (req, res) => {
  * GET /api/votes/results/:pollId
  * Returns the current vote counts for a poll.
  */
-router.get('/results/:pollId', async (req, res) => {
+router.get('/results/:pollId', validate(pollIdParamSchema, 'params'), async (req, res) => {
   try {
     const db = getDb();
     const doc = await db.collection('polls').doc(req.params.pollId).get();

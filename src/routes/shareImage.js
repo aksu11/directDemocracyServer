@@ -4,6 +4,7 @@ const { getDb } = require('../services/firebase');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { withPercentages } = require('../services/pollFormat');
 const { renderEndedPollImage } = require('../services/resultImage');
+const { isValidFirestoreId } = require('../schemas/common');
 
 // Sama julkinen osoite kuin routes/share.js:ssä - käytetään QR-koodin
 // sisältämän äänestyslinkin (pollUrl) rakentamiseen resultImage.js:lle.
@@ -31,6 +32,10 @@ function cacheImage(pollId, buffer) {
  */
 router.get('/share-image/ended/:pollId', async (req, res) => {
   const { pollId } = req.params;
+
+  if (!isValidFirestoreId(pollId)) {
+    return res.status(400).end();
+  }
 
   try {
     let image = cache.get(pollId);
