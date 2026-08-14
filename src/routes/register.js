@@ -19,9 +19,10 @@ const VALID_PLATFORMS = ['android', 'ios'];
  *   country    {string}  – ISO 3166-1 alpha-2 -maakoodi (esim. "FI")
  *   platform   {string}  – "android" tai "ios" (valinnainen, oletus "android"
  *                           taaksepäin yhteensopivuuden vuoksi vanhoille clienteille)
- *   birthYear  {number}  – syntymävuosi (valinnainen). Käytetään vain poliittisesti
+ *   birthYear  {number}  – syntymävuosi (vaaditaan). Käytetään vain poliittisesti
  *                           merkittyjen äänestysten (isPolitical: true) ikärajan
- *                           tarkistukseen – emme tallenna tarkempaa syntymäaikaa.
+ *                           tarkistukseen – emme tallenna tarkempaa syntymäaikaa,
+ *                           mikä riittää ikärajan toteamiseen (tietojen minimointi).
  */
 router.post('/', appCheck, deviceAuth, async (req, res) => {
   const { country, platform, birthYear } = req.body;
@@ -47,14 +48,18 @@ router.post('/', appCheck, deviceAuth, async (req, res) => {
     }
   }
 
-  // birthYear on valinnainen, mutta jos se annetaan sen täytyy olla järkevä syntymävuosi.
-  let birthYearValue;
-  if (birthYear !== undefined && birthYear !== null && birthYear !== '') {
-    birthYearValue = Number(birthYear);
-    const currentYear = new Date().getFullYear();
-    if (!Number.isInteger(birthYearValue) || birthYearValue < currentYear - 120 || birthYearValue > currentYear) {
-      return res.status(400).json({ error: 'birthYear täytyy olla validi syntymävuosi.' });
-    }
+  // birthYear vaaditaan. Ilman sitä käyttäjä ei voi äänestää poliittisissa
+  // äänestyksissä eikä saa niistä push-ilmoituksia (ks. data/geography.js
+  // hasMinimumAge palauttaa false kun syntymävuotta ei tunneta) - ja tämä
+  // tapahtuisi täysin hiljaisesti, ilman että käyttäjälle kerrotaan syytä.
+  if (birthYear === undefined || birthYear === null || birthYear === '') {
+    return res.status(400).json({ error: 'birthYear vaaditaan.' });
+  }
+
+  const birthYearValue = Number(birthYear);
+  const currentYear = new Date().getFullYear();
+  if (!Number.isInteger(birthYearValue) || birthYearValue < currentYear - 120 || birthYearValue > currentYear) {
+    return res.status(400).json({ error: 'birthYear täytyy olla validi syntymävuosi.' });
   }
 
   try {
@@ -67,11 +72,9 @@ router.post('/', appCheck, deviceAuth, async (req, res) => {
     // Muuten ikärajan (isPolitical-äänestykset) tarkoitus menettäisi merkityksensä,
     // koska käyttäjä voisi muuttaa syntymävuottaan aina halutessaan äänestää.
     let birthYearToSet = birthYearValue;
-    if (birthYearValue !== undefined) {
-      const existing = await userRef.get();
-      if (existing.exists && existing.data().birthYear !== undefined) {
-        birthYearToSet = undefined;
-      }
+    const existing = await userRef.get();
+    if (existing.exists && existing.data().birthYear) {
+      birthYearToSet = undefined;
     }
 
     // merge: true sallii sijainnin päivittämisen myöhemmin
