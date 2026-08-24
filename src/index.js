@@ -1,10 +1,12 @@
 require('dotenv').config();
 const path = require('path');
+const { execSync } = require('child_process');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const { initFirebase } = require('./services/firebase');
 const { archiveEndedPolls } = require('./services/pollArchive');
+const { publishIntegrityAnchor } = require('./services/integrityAnchor');
 const pollsRouter = require('./routes/polls');
 const votesRouter = require('./routes/votes');
 const adminRouter = require('./routes/admin');
@@ -17,6 +19,24 @@ const statusRouter    = require('./routes/status');
 const accountDeletionRouter = require('./routes/accountDeletion');
 
 const ARCHIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+const INTEGRITY_ANCHOR_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 h
+
+/**
+ * Käynnissä olevan koodin git-commit. Julkaistaan /health-reitillä, jotta
+ * kuka tahansa voi verrata mitä koodia palvelin OIKEASTI ajaa juuri nyt
+ * julkiseen lähdekoodirepoon (github.com/aksu11/directDemocracyServer) -
+ * pelkkä avoin lähdekoodi ei sellaisenaan todista mitään tuotannossa
+ * ajettavasta versiosta ilman tätä.
+ */
+function resolveGitCommit() {
+  if (process.env.RENDER_GIT_COMMIT) return process.env.RENDER_GIT_COMMIT;
+  try {
+    return execSync('git rev-parse HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return null;
+  }
+}
+const GIT_COMMIT = resolveGitCommit();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -85,6 +105,14 @@ setInterval(() => {
   archiveEndedPolls().catch((err) => console.error('Äänestysten arkistointi epäonnistui:', err));
 }, ARCHIVE_INTERVAL_MS);
 
+// Julkaisee hash-ketjujen nykytilan ulkoiseen GitHub-repoon (ks.
+// services/integrityAnchor.js) - ei kaadu jos GITHUB_INTEGRITY-muuttujaa
+// ei ole asetettu, ohittaa silloin vain hiljaisesti.
+publishIntegrityAnchor().catch((err) => console.error('Hash-ketjun ulkoinen ankkurointi epäonnistui:', err));
+setInterval(() => {
+  publishIntegrityAnchor().catch((err) => console.error('Hash-ketjun ulkoinen ankkurointi epäonnistui:', err));
+}, INTEGRITY_ANCHOR_INTERVAL_MS);
+
 // Serve static admin page
 app.get('/admin', (req, res) => res.redirect('/admin/admin.html'));
 app.use('/admin', express.static(path.join(__dirname, '..', 'public')));
@@ -113,8 +141,9 @@ app.use(shareImageRouter);
 // Tilin/tietojen poisto -ohjesivu (Google Play -tietosuojaosion vaatima linkki).
 app.use(accountDeletionRouter);
 
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// Health check - gitCommit kertoo mitä koodia tuotannossa oikeasti ajetaan,
+// jotta sitä voi verrata julkiseen lähdekoodirepoon (ks. resolveGitCommit yllä).
+app.get('/health', (req, res) => res.json({ status: 'ok', gitCommit: GIT_COMMIT }));
 
 // 404 handler
 app.use((req, res) => res.status(404).json({ error: 'Not found.' }));

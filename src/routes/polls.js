@@ -9,6 +9,7 @@ const { isEligible } = require('../data/geography');
 const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { getActiveBanner } = require('../services/banners');
 const { withPercentages } = require('../services/pollFormat');
+const { verifyChain } = require('../services/hashChain');
 const { marked } = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
@@ -132,6 +133,43 @@ router.get('/ended/:pollId', validate(pollIdParamSchema, 'params'), async (req, 
   } catch (err) {
     console.error('GET /polls/ended/:pollId error:', err);
     return res.status(500).json({ error: 'Failed to fetch poll.' });
+  }
+});
+
+/**
+ * GET /api/polls/ended/:pollId/chain
+ * Palauttaa päättyneen äänestyksen koko hash-ketjun (jokainen äänestys-
+ * tapahtuma sekä lopullisen tuloksen sitova "poll_closed"-merkintä), jotta
+ * kuka tahansa voi itse tarkistaa laskennan eheyden: jokaisen merkinnän
+ * prevHash täsmää edelliseen hashiin, jokaisen merkinnän oma hash täsmää sen
+ * sisällöstä laskettuun arvoon, ja ketjun viimeinen hash täsmää äänestyksen
+ * julkisesti näytettyyn chainHead-arvoon (ks. GET /api/polls/ended/:pollId).
+ * Julkaistaan vain päättyneille äänestyksille - aktiivisen äänestyksen
+ * ketjun sisältö paljastaisi äänijakauman ennen äänestyksen sulkeutumista.
+ */
+router.get('/ended/:pollId/chain', validate(pollIdParamSchema, 'params'), async (req, res) => {
+  try {
+    const db = getDb();
+    const pollRef = db.collection(ENDED_COLLECTION).doc(req.params.pollId);
+    const pollDoc = await pollRef.get();
+
+    if (!pollDoc.exists) {
+      return res.status(404).json({ error: 'Poll not found.' });
+    }
+
+    const chainSnapshot = await pollRef.collection('chain').orderBy('seq', 'asc').get();
+    const chain = chainSnapshot.docs.map((d) => d.data());
+    const { valid, brokenAtSeq } = verifyChain(chain);
+
+    return res.json({
+      pollId: req.params.pollId,
+      chainHead: pollDoc.data().chainHead || null,
+      chain,
+      verification: { valid, brokenAtSeq },
+    });
+  } catch (err) {
+    console.error('GET /polls/ended/:pollId/chain error:', err);
+    return res.status(500).json({ error: 'Ketjun haku epäonnistui.' });
   }
 });
 

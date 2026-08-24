@@ -10,6 +10,15 @@ const { isEligible, hasMinimumAge, MIN_POLITICAL_AGE } = require('../data/geogra
 const { verifyGoogleIdToken } = require('../services/googleAuth');
 const { lookupCountry } = require('../services/geoIp');
 const { isRateLimited } = require('../services/voteRateLimiter');
+const { buildChainEntry, toChainHead } = require('../services/hashChain');
+
+/** Reitin sisäinen apuluokka: kuljettaa HTTP-statuksen transaktion virheen mukana. */
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const pollIdParamSchema = Joi.object({ pollId: firestoreIdRule.required() }).unknown(true);
 
@@ -97,33 +106,62 @@ router.post('/', appCheck, deviceAuth, validate(castVoteBodySchema, 'body'), asy
       return res.status(400).json({ error: 'Invalid optionId.' });
     }
 
-    // Check for duplicate vote using the device hash (or Google uid) as the document ID
     const voteRef = db.collection('polls').doc(String(pollId)).collection('votes').doc(voteDocId);
-    const existingVote = await voteRef.get();
 
-    if (existingVote.exists) {
-      return res.status(409).json({ error: 'You have already voted in this poll.' });
-    }
+    // Transaktio: uudelleenluetaan poll + vote-dokumentti tuoreena (ei
+    // ulkopuolisen esitarkistuksen varassa, joka olisi altis TOCTOU-
+    // kilpa-ajotilanteelle kahden samanaikaisen pyynnön välillä), ja
+    // äänen kirjaus + äänimäärän kasvatus + hash-ketjun uusi merkintä
+    // tehdään samana atomisena kirjoituksena. Näin ketjun seq/prevHash
+    // pysyy oikeana myös rinnakkaisten äänestyspyyntöjen alla.
+    await db.runTransaction(async (tx) => {
+      const [freshPollDoc, existingVote] = await Promise.all([tx.get(pollRef), tx.get(voteRef)]);
 
-    // Atomic write: record the vote and increment the option counter
-    const batch = db.batch();
+      if (!freshPollDoc.exists) {
+        throw new HttpError(404, 'Poll not found.');
+      }
+      const freshPoll = freshPollDoc.data();
 
-    batch.set(voteRef, {
-      optionId: optIdx,
-      votedAt: new Date(),
-      ipCountry: ipCountry || null,
-      ...(poll.requiresLogin === true && { deviceHash }),
+      if (!freshPoll.endsAt || freshPoll.endsAt.toDate() <= new Date()) {
+        throw new HttpError(410, 'This poll has ended.');
+      }
+      if (existingVote.exists) {
+        throw new HttpError(409, 'You have already voted in this poll.');
+      }
+      if (optIdx >= freshPoll.options.length) {
+        throw new HttpError(400, 'Invalid optionId.');
+      }
+
+      const votedAt = new Date();
+
+      tx.set(voteRef, {
+        optionId: optIdx,
+        votedAt,
+        ipCountry: ipCountry || null,
+        ...(freshPoll.requiresLogin === true && { deviceHash }),
+      });
+
+      const updatedOptions = freshPoll.options.map((opt) =>
+        opt.id === optIdx ? { ...opt, votes: opt.votes + 1 } : opt
+      );
+
+      const chainEntry = buildChainEntry(pollRef.id, freshPoll.chainHead, {
+        type: 'vote',
+        pollId: pollRef.id,
+        voteId: voteDocId,
+        optionId: optIdx,
+        votedAt: votedAt.toISOString(),
+      });
+      tx.set(pollRef.collection('chain').doc(String(chainEntry.seq)), chainEntry);
+
+      tx.update(pollRef, { options: updatedOptions, chainHead: toChainHead(chainEntry) });
     });
-
-    const updatedOptions = poll.options.map((opt) =>
-      opt.id === optIdx ? { ...opt, votes: opt.votes + 1 } : opt
-    );
-    batch.update(pollRef, { options: updatedOptions });
-
-    await batch.commit();
 
     return res.status(201).json({ message: 'Vote recorded.' });
   } catch (err) {
+    if (err instanceof HttpError) {
+      return res.status(err.status).json({ error: err.message });
+    }
     console.error('POST /votes error:', err);
     return res.status(500).json({ error: 'Failed to record vote.' });
   }

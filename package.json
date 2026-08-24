@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "verify-chain": "node scripts/verifyChain.js",
+    "publish-integrity-repo": "node scripts/publishIntegrityRepoFiles.js"
   },
   "keywords": [],
   "author": "",

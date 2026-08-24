@@ -12,6 +12,8 @@ const { ENDED_COLLECTION } = require('../services/pollArchive');
 const { setActiveBanner, resolveImageUrl } = require('../services/banners');
 const { getAppStatus, setAppStatus } = require('../services/appStatus');
 const { sendNewPollNotification, sendUpdateNotification } = require('../services/pushNotifications');
+const { genesisHash, toChainHead } = require('../services/hashChain');
+const { publishIntegrityAnchor } = require('../services/integrityAnchor');
 
 const pollIdParamSchema = Joi.object({ pollId: firestoreIdRule.required() }).unknown(true);
 const bannerIdParamSchema = Joi.object({ id: firestoreIdRule.required() }).unknown(true);
@@ -98,9 +100,10 @@ router.post('/polls', adminAuth, validate(createPollBodySchema, 'body'), async (
       console.warn('Unable to check admin lastCreatedAt', e);
     }
     const db = getDb();
+    const pollOptions = options.map((label, i) => ({ id: i, label: String(label).trim(), votes: 0 }));
     const pollData = {
       question: question.trim(),
-      options: options.map((label, i) => ({ id: i, label: String(label).trim(), votes: 0 })),
+      options: pollOptions,
       scope,
       ...(descTrim && { description: descTrim }),
       ...(scopeCountryCode && { scopeCountry: scopeCountryCode }),
@@ -112,13 +115,37 @@ router.post('/polls', adminAuth, validate(createPollBodySchema, 'body'), async (
       endsAt: endsAtDate,
     };
 
-    const ref = await db.collection('polls').add(pollData);
+    // Ennalta generoitu ID, jotta hash-ketjun genesis-arvo (ks.
+    // services/hashChain.js) voidaan laskea ja liittää samaan kirjoitukseen.
+    // Genesis sitoo mukaan äänestyksen alkuperäiset tiedot, joten niitäkään
+    // ei voi muuttaa jälkikäteen paljastamatta ketjun rikkoutumista.
+    const pollRef = db.collection('polls').doc();
+    const genesis = genesisHash(pollRef.id, {
+      question: pollData.question,
+      options: pollOptions.map((o) => o.label),
+      scope: pollData.scope,
+      scopeCountry: scopeCountryCode || null,
+      requiresLogin: pollData.requiresLogin,
+      isPolitical: pollData.isPolitical,
+      endsAt: endsAtDate.toISOString(),
+    });
+    pollData.chainHead = toChainHead({ seq: 0, hash: genesis, createdAt: pollData.createdAt });
+
+    await pollRef.set(pollData);
+    await pollRef.collection('chain').doc('0').set({
+      seq: 0,
+      prevHash: null,
+      hash: genesis,
+      event: { type: 'poll_created', pollId: pollRef.id },
+      createdAt: pollData.createdAt,
+    });
+
     // record creation time for admin
     try { await setLastCreatedAt(req.adminUser, new Date().toISOString()); } catch (e) { console.warn('Failed to set lastCreatedAt', e); }
     // Lähetä push-ilmoitus kiinnostuneille käyttäjille - ei odoteta valmiiksi eikä
     // virhe saa estää vastauksen palautusta admin-sivulle.
-    sendNewPollNotification(pollData, ref.id).catch((e) => console.warn('sendNewPollNotification failed', e));
-    return res.status(201).json({ id: ref.id, ...pollData });
+    sendNewPollNotification(pollData, pollRef.id).catch((e) => console.warn('sendNewPollNotification failed', e));
+    return res.status(201).json({ id: pollRef.id, ...pollData });
   } catch (err) {
     console.error('POST /admin/polls error:', err);
     return res.status(500).json({ error: 'Äänestyksen luonti epäonnistui.' });
@@ -355,6 +382,30 @@ router.post('/notify-update', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /admin/notify-update error:', err);
     return res.status(500).json({ error: 'Ilmoitusten lähetys epäonnistui.' });
+  }
+});
+
+/**
+ * POST /api/admin/integrity/anchor
+ * Julkaisee hash-ketjujen nykytilan ulkoiseen GitHub-repoon heti (vain
+ * superadmin) - normaalisti tämä ajetaan automaattisesti 24h välein (ks.
+ * index.js), mutta manuaalinen laukaisu on hyödyllinen käyttöönoton
+ * testaamiseen ilman että pitää odottaa seuraavaa ajastettua ajoa.
+ */
+router.post('/integrity/anchor', adminAuth, async (req, res) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Vain superadmin voi laukaista ankkuroinnin manuaalisesti.' });
+  }
+
+  try {
+    const snapshot = await publishIntegrityAnchor();
+    if (!snapshot) {
+      return res.status(503).json({ error: 'Ankkurointi ei ole konfiguroitu (GITHUB_INTEGRITY/GITHUB_INTEGRITY_REPO puuttuu) tai äänestyksiä ei vielä ole.' });
+    }
+    return res.json(snapshot);
+  } catch (err) {
+    console.error('POST /admin/integrity/anchor error:', err);
+    return res.status(500).json({ error: err.message || 'Ankkurointi epäonnistui.' });
   }
 });
 
